@@ -119,8 +119,8 @@ object SiteParser {
     /** Resolves multiple event types in one official slot for the selected calendar week. */
     fun lessonKind(lesson: Lesson, date: LocalDate): String {
         val raw = lesson.raw
-        if (raw.contains("экзамен", ignoreCase = true)) return "ЭКЗАМЕН"
-        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true)) return "ЗАЧЁТ"
+        if (raw.contains("экзамен", ignoreCase = true) || Regex("""(?i)(?<![а-яё])экз\.?(?![а-яё])""").containsMatchIn(raw)) return "ЭКЗАМЕН"
+        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true) || Regex("""(?i)(?<![а-яё])зач\.?(?![а-яё])""").containsMatchIn(raw)) return "ЗАЧЁТ"
         val week = ((java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7) + 1).toInt()
         val typeParts = Regex(
             """(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""",

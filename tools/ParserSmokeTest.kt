@@ -61,6 +61,8 @@ fun main() {
     check(SiteParser.lessonKind(
       Lesson(4,"10:10-11:40","Сервис, Преподаватель, (п.з.: 7-12 нед. *), а. 411"),
       LocalDate.of(2026,10,16)) == "ПРАКТИКА")
+    check(SiteParser.lessonKind(Lesson(2, "10:10-11:40", "Математика, зач."), LocalDate.of(2026,11,28)) == "ЗАЧЁТ")
+    check(SiteParser.lessonKind(Lesson(2, "10:10-11:40", "Математика, экз."), LocalDate.of(2026,11,28)) == "ЭКЗАМЕН")
     val saturday = snapshot.lessons.first { it.day == 5 }
     check(!SiteParser.applicable(saturday, LocalDate.of(2026, 10, 17)))
     check(SiteParser.applicable(saturday, LocalDate.of(2026, 11, 28)))
