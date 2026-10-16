@@ -15,7 +15,8 @@ jobs:
       - name: Unpack project source archive
         run: |
           if [ -f NSPUWidget-source.tar.xz ]; then
-            tar --exclude='./.github/workflows/build-apk.yml' -xJf NSPUWidget-source.tar.xz
+            tar --exclude='.github/workflows/build-apk.yml' -xJf NSPUWidget-source.tar.xz
+            git restore .github/workflows/build-apk.yml
             rm NSPUWidget-source.tar.xz
           fi
       - name: Commit source files if newly unpacked
