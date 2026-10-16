@@ -12,30 +12,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack project sources
+      - name: Unpack project source archive
         run: |
           if [ -f NSPUWidget-source.tar.xz ]; then
-            tar -xJf NSPUWidget-source.tar.xz
+            tar --exclude='./.github/workflows/build-apk.yml' -xJf NSPUWidget-source.tar.xz
+            rm NSPUWidget-source.tar.xz
           fi
-      - name: Publish unpacked source files to repository
+      - name: Commit source files if newly unpacked
         run: |
-          if [ -f NSPUWidget-source.tar.xz ]; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -A
-            git commit -m 'Extract Kotlin Android project sources' || true
-            git push || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish complete Android Kotlin source files'
+            git push
           fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Install Android SDK 35
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install Android SDK Platform 35
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK artifact
