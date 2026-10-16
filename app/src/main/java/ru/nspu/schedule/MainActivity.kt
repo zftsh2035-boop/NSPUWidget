@@ -1,235 +1,379 @@
 package ru.nspu.schedule
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.View
-import android.view.ViewGroup
-import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-class MainActivity: Activity() {
-    private lateinit var content: LinearLayout
-    private lateinit var scroll: ScrollView
-    private val handler = Handler(Looper.getMainLooper())
-    private val navy = Color.rgb(18, 35, 55)
+private val Sea = Color(0xFF008D80)
+private val Blue = Color(0xFF2563DB)
+private val Violet = Color(0xFF8E53DA)
+private val Amber = Color(0xFFC07816)
 
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = navy
-        scroll = ScrollView(this)
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(26, 30, 26, 34)
-            setBackgroundColor(Color.rgb(245, 248, 252))
-        }
-        scroll.addView(content)
-        setContentView(scroll)
         Sync.schedule(this)
         if (Store.cached(this).isEmpty()) Sync.now(this)
-        show()
-        if (Store.cached(this).isEmpty()) refreshAfterWork()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+        }
+        setContent {
+            val dark = isSystemInDarkTheme()
+            val colors = when {
+                Build.VERSION.SDK_INT >= 31 && dark -> dynamicDarkColorScheme(this)
+                Build.VERSION.SDK_INT >= 31 -> dynamicLightColorScheme(this)
+                dark -> darkColorScheme(primary = Color(0xFF9CC5FF), secondary = Color(0xFF5DE0C9))
+                else -> lightColorScheme(primary = Blue, secondary = Sea, background = Color(0xFFF6F8FE))
+            }
+            MaterialTheme(colorScheme = colors) { AppScreen() }
+        }
     }
-    override fun onResume() { super.onResume(); if (::content.isInitialized) show() }
 
-    private fun refreshAfterWork() {
-        handler.postDelayed({ if (!isFinishing && !isDestroyed) show() }, 3000)
-        handler.postDelayed({ if (!isFinishing && !isDestroyed) show() }, 9000)
-    }
-    private fun action(text: String, click: () -> Unit): Button = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        textSize = 12f
-        setOnClickListener { click() }
-    }
-    private fun line(text: String, size: Float = 15f, color: Int = navy, pad: Int = 8) {
-        content.addView(TextView(this).apply {
-            this.text = text; textSize = size; setTextColor(color)
-            setPadding(2, pad, 2, pad)
-        })
-    }
-    private fun show() {
-        content.removeAllViews()
-        line("Расписание НГПУ", 25f, navy, 4)
-        line("Автообновление каждые 3 часа", 12f, Color.DKGRAY, 4)
-        content.addView(action("Группа: " + Store.scheduleGroupName(this) + "   ▾") { chooseFaculty() })
-
-        val notices = Store.notices(this)
-        val unread = notices.count { it.isNew }
-        line("Объявления ${if (unread > 0) "· $unread новых" else ""}", 20f, navy, 12)
-        if (notices.isEmpty()) {
-            line("Объявлений нет или данные ещё не загружены.", 13f)
-        } else {
-            notices.forEach { n ->
-                val label = SiteParser.noticeLabel(n) + " · "
-                val box = TextView(this).apply {
-                    text = "$label${SiteParser.formattedNoticeDate(n)}\n${n.text}"
-                    textSize = 14f
-                    setTextColor(if (n.isNew) Color.rgb(98, 54, 0) else navy)
-                    setBackgroundColor(if (n.isNew) Color.rgb(255, 235, 191) else Color.rgb(230, 235, 242))
-                    setPadding(17, 13, 17, 13)
-                }
-                content.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 })
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun AppScreen() {
+        var rerender by remember { mutableIntStateOf(0) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(3200)
+                rerender += 1
             }
         }
-        val history = Store.archivedNotices(this)
-        if (history.isNotEmpty()) {
-            line("Больше не на сайте · ${history.size}", 13f, Color.DKGRAY)
-            content.addView(action("Показать историю объявлений") {
-                val historyText = Store.archivedNotices(this).joinToString("\n\n") { it.text }
-                AlertDialog.Builder(this).setTitle("Больше не на сайте НГПУ")
-                    .setMessage(historyText.take(18000))
-                    .setPositiveButton("Закрыть", null).show()
-            })
-        }
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        actions.addView(action("Прочитано") {
-            Store.markAllRead(this); ScheduleWidget.renderAll(this); show()
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        actions.addView(action("Сайт НГПУ ↗") {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this))))
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        content.addView(actions)
-
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            line("Разреши уведомления, чтобы узнавать о новых объявлениях без открытия приложения.", 12f)
-            content.addView(action("Разрешить уведомления") {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
-            })
-        } else line("Уведомления о новых объявлениях: доступны", 12f, Color.rgb(27, 108, 68), 4)
-
-        line("Расписание занятий", 20f, navy, 12)
-        val groups = listOf("Все", "А1", "А2", "А3", "А4", "А5", "А6", "А7", "А8", "А9", "А10", "Немецкий")
-        line("Подгруппа по иностранному языку", 12f, Color.DKGRAY, 2)
-        val spinner = Spinner(this)
-        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, groups)
-        spinner.setSelection(groups.indexOf(Store.group(this)).coerceAtLeast(0))
-        spinner.onItemSelectedListener = object: AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (Store.group(this@MainActivity) != groups[position]) {
-                    Store.setGroup(this@MainActivity, groups[position]); ScheduleWidget.renderAll(this@MainActivity); show()
-                }
-            }
-        }
-        content.addView(spinner)
-        val toolbar = LinearLayout(this)
-        listOf("‹ День", "Сегодня", "День ›", "⟳ Обновить").forEachIndexed { i, label ->
-            toolbar.addView(action(label) {
-                when (i) {
-                    0 -> Store.offset(this, -1)
-                    1 -> Store.resetDate(this)
-                    2 -> Store.offset(this, 1)
-                    3 -> { Sync.now(this); refreshAfterWork() }
-                }
-                ScheduleWidget.renderAll(this); show()
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-        content.addView(toolbar)
+        val refreshTick = rerender // Read state to reflect background sync/cache changes.
+        var selectedTab by remember { mutableIntStateOf(if (intent.getBooleanExtra("show_notices", false)) 1 else 0) }
         val date = Store.date(this)
-        line("${date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale("ru")))} · ${Store.week(date)}-я неделя", 17f)
         val lessons = Store.forDate(this, date)
-        if (lessons.isEmpty()) line("Пар нет или данные ещё не загружены", 15f)
-        else lessons.forEach { lessonCard(it) }
-        line("Последняя успешная проверка: ${Store.status(this)} (Новосибирск)", 12f, Color.DKGRAY)
-        if (Store.error(this).isNotBlank()) line("Ошибка синхронизации: ${Store.error(this)}. Показан кэш.", 12f, Color.RED)
-        line("Статусы: «новое», «на сайте», «больше не на сайте». Даты внутри текста не считаются датами публикации или окончания действия.", 12f, Color.DKGRAY)
-    }
+        val notices = Store.notices(this)
+        val group = Store.scheduleGroupName(this)
+        val subgroup = Store.group(this)
+        val lastUpdate = Store.status(this)
+        val error = Store.error(this)
+        var picker by remember { mutableIntStateOf(0) }
+        var working by remember { mutableStateOf(false) }
+        var pickerError by remember { mutableStateOf("") }
+        var institutes by remember { mutableStateOf<List<Faculty>>(emptyList()) }
+        var groupOptions by remember { mutableStateOf<List<UniversityGroup>>(emptyList()) }
+        var faculty by remember { mutableStateOf<Faculty?>(null) }
+        var subgroupPicker by remember { mutableStateOf(false) }
 
-
-    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
-
-    private fun chooseFaculty() {
-        Toast.makeText(this, "Загружаю институты…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val result = runCatching { GroupCatalog.faculties() }
-            handler.post {
-                if (isFinishing || isDestroyed) return@post
-                result.onSuccess { options ->
-                    if (options.isEmpty()) Toast.makeText(this, "Нет доступных институтов", Toast.LENGTH_LONG).show()
-                    else AlertDialog.Builder(this).setTitle("Выбери институт")
-                        .setItems(options.map { it.title }.toTypedArray()) { _, index -> chooseGroup(options[index]) }
-                        .setNegativeButton("Отмена", null).show()
-                }.onFailure { Toast.makeText(this, "Каталог недоступен: " + it.message, Toast.LENGTH_LONG).show() }
-            }
-        }.start()
-    }
-
-    private fun chooseGroup(faculty: Faculty) {
-        Toast.makeText(this, "Загружаю группы…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val result = runCatching { GroupCatalog.groups(faculty.id) }
-            handler.post {
-                if (isFinishing || isDestroyed) return@post
-                result.onSuccess { groups ->
-                    if (groups.isEmpty()) Toast.makeText(this, "Группы пока не опубликованы", Toast.LENGTH_LONG).show()
-                    else AlertDialog.Builder(this).setTitle(faculty.title + " · группа")
-                        .setItems(groups.map { it.title }.toTypedArray()) { _, index ->
-                            val g = groups[index]
-                            Store.selectScheduleGroup(this, g.id, g.title)
-                            ScheduleWidget.renderAll(this)
-                            Sync.now(this)
-                            show()
-                            refreshAfterWork()
-                        }.setNegativeButton("Назад", null).show()
-                }.onFailure { Toast.makeText(this, "Ошибка загрузки: " + it.message, Toast.LENGTH_LONG).show() }
-            }
-        }.start()
-    }
-
-    private fun lessonCard(l: Lesson) {
-        val d = SiteParser.details(l)
-        val accent = if (l.changed) Color.rgb(245, 162, 72) else SiteParser.lessonColor(d.kind)
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE); cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.rgb(223, 233, 243))
-            }
-            setPadding(0, dp(10), dp(12), dp(10))
+        fun loadInstitutes() {
+            picker = 1
+            working = true
+            pickerError = ""
+            Thread {
+                val result = runCatching { GroupCatalog.faculties() }
+                runOnUiThread {
+                    working = false
+                    result.onSuccess { institutes = it }.onFailure { pickerError = it.message ?: "Сбой сети" }
+                }
+            }.start()
         }
-        card.addView(View(this).apply { setBackgroundColor(accent) },
-            LinearLayout.LayoutParams(dp(5), ViewGroup.LayoutParams.MATCH_PARENT))
-        card.addView(TextView(this).apply {
-            text = l.time.replace("-", "\n")
-            textSize = 13f; setTextColor(navy); setPadding(dp(12), dp(4), 0, 0)
-        }, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT))
-        val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        info.addView(TextView(this).apply {
-            text = d.kind + if (l.changed) " · ИЗМЕНЕНО" else ""
-            textSize = 10f; setTextColor(accent)
-        })
-        info.addView(TextView(this).apply {
-            text = d.subject; textSize = 15f; setTextColor(navy)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(3), 0, dp(6))
-        })
-        info.addView(TextView(this).apply {
-            text = "Преподаватель: " + d.teacher; textSize = 12f
-            setTextColor(Color.rgb(81, 95, 114))
-        })
-        info.addView(TextView(this).apply {
-            text = "Аудитория: " + d.room; textSize = 12f
-            setTextColor(Color.rgb(29, 113, 168)); setPadding(0, dp(4), 0, 0)
-        })
-        card.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        content.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(9) })
+        fun loadGroups(f: Faculty) {
+            faculty = f
+            picker = 2
+            working = true
+            pickerError = ""
+            Thread {
+                val result = runCatching { GroupCatalog.groups(f.id) }
+                runOnUiThread {
+                    working = false
+                    result.onSuccess { groupOptions = it }.onFailure { pickerError = it.message ?: "Сбой сети" }
+                }
+            }.start()
+        }
+
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                    actions = {
+                        TextButton(onClick = { Sync.now(this@MainActivity); rerender++ }) {
+                            Text("⟳", fontSize = 27.sp)
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        icon = { Text("▦", fontSize = 22.sp) }, label = { Text("Расписание") })
+                    NavigationBarItem(selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        icon = { Text("◉", fontSize = 22.sp) },
+                        label = { Text("Объявления" + if (notices.any { it.isNew }) " ●" else "") })
+                }
+            }
+        ) { insets ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(insets),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Surface(shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("ТВОЯ ГРУППА", fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .75f))
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(group.substringBefore(" "), fontSize = 24.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    Text(group.substringAfter(" ", ""), maxLines = 2,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontSize = 12.sp)
+                                }
+                                FilledTonalButton(onClick = { loadInstitutes() }) { Text("Сменить") }
+                            }
+                        }
+                    }
+                }
+
+                if (selectedTab == 0) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text("Подгруппа", modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium)
+                            AssistChip(onClick = { subgroupPicker = true }, label = { Text(subgroup + "  ▾") })
+                        }
+                    }
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items((-1..5).toList()) { daysFromToday ->
+                                val relative = LocalDate.now(ZONE).plusDays(daysFromToday.toLong())
+                                val active = relative == date
+                                val caption = relative.format(DateTimeFormatter.ofPattern("EE", Locale.forLanguageTag("ru-RU")))
+                                val number = relative.dayOfMonth
+                                if (active) Button(
+                                    onClick = {
+                                        Store.resetDate(this@MainActivity)
+                                        Store.offset(this@MainActivity, daysFromToday)
+                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        rerender++
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                ) { Text("$caption $number") }
+                                else OutlinedButton(
+                                    onClick = {
+                                        Store.resetDate(this@MainActivity)
+                                        Store.offset(this@MainActivity, daysFromToday)
+                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        rerender++
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                ) { Text("$caption $number") }
+                            }
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(date.format(DateTimeFormatter.ofPattern("d MMMM, EEEE",
+                                    Locale.forLanguageTag("ru-RU"))),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text(lessons.size.toString() + " пар",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (notices.isNotEmpty()) {
+                        item {
+                            val top = notices.firstOrNull { it.isNew } ?: notices.first()
+                            Surface(shape = RoundedCornerShape(20.dp),
+                                onClick = { selectedTab = 1 },
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Text("📣 " + if (top.isNew) "Новое объявление" else "Объявление НГПУ",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(top.text, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                    if (lessons.isEmpty()) item {
+                        Surface(shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                            Text("Занятий на выбранный день нет. Если расписание ещё не загружено, нажми ⟳.",
+                                modifier = Modifier.padding(20.dp))
+                        }
+                    }
+                    items(lessons) { lesson -> LessonCard(lesson, date) }
+                } else {
+                    item {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Объявления · " + notices.size,
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            TextButton(onClick = {
+                                Store.markAllRead(this@MainActivity)
+                                ScheduleWidget.renderAll(this@MainActivity)
+                                rerender++
+                            }) { Text("Прочитано") }
+                        }
+                    }
+                    if (notices.isEmpty()) item {
+                        Text("Объявлений на сайте сейчас нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    items(notices) { notice ->
+                        Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(if (notice.isNew) "● НОВОЕ" else "НГПУ",
+                                    color = if (notice.isNew) MaterialTheme.colorScheme.tertiary
+                                        else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Spacer(Modifier.height(8.dp))
+                                Text(notice.text, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                    item {
+                        OutlinedButton(onClick = {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this@MainActivity))))
+                        }) { Text("Открыть оригинал на сайте НГПУ ↗") }
+                    }
+                }
+                item {
+                    Text(
+                        if (error.isNotBlank()) "Нет связи · сохранённая версия ($error)"
+                        else "Проверено: $lastUpdate · автообновление примерно раз в 3 часа",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (picker != 0) {
+            AlertDialog(onDismissRequest = { picker = 0 },
+                title = { Text(if (picker == 1) "Выбери институт" else faculty?.title ?: "Выбери группу") },
+                text = {
+                    when {
+                        working -> CircularProgressIndicator()
+                        pickerError.isNotBlank() -> Text("Ошибка: $pickerError")
+                        else -> LazyColumn(Modifier.heightIn(max = 410.dp)) {
+                            if (picker == 1) items(institutes) { option ->
+                                Text(option.title, modifier = Modifier.fillMaxWidth()
+                                    .clickable { loadGroups(option) }
+                                    .padding(vertical = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium)
+                                HorizontalDivider()
+                            }
+                            else items(groupOptions) { option ->
+                                Text(option.title, modifier = Modifier.fillMaxWidth()
+                                    .clickable {
+                                        Store.selectScheduleGroup(this@MainActivity, option.id, option.title)
+                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        Sync.now(this@MainActivity)
+                                        picker = 0
+                                        rerender++
+                                    }.padding(vertical = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium)
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { picker = 0 }) { Text("Закрыть") } },
+                dismissButton = if (picker == 2) {
+                    { TextButton(onClick = { picker = 1 }) { Text("Назад") } }
+                } else null)
+        }
+        if (subgroupPicker) {
+            AlertDialog(onDismissRequest = { subgroupPicker = false },
+                title = { Text("Подгруппа") },
+                text = {
+                    LazyColumn(Modifier.heightIn(max = 400.dp)) {
+                        items(listOf("Все", "А1", "А2", "А3", "А4", "А5", "А6", "А7", "А8", "А9", "А10", "Немецкий")) { name ->
+                            Text(name, modifier = Modifier.fillMaxWidth().clickable {
+                                Store.setGroup(this@MainActivity, name)
+                                ScheduleWidget.renderAll(this@MainActivity)
+                                subgroupPicker = false
+                                rerender++
+                            }.padding(12.dp))
+                        }
+                    }
+                }, confirmButton = { TextButton(onClick = { subgroupPicker = false }) { Text("Отмена") } })
+        }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 100) show()
+    @Composable
+    private fun LessonCard(lesson: Lesson, date: LocalDate) {
+        val data = SiteParser.details(lesson, date)
+        val accent = Color(SiteParser.lessonColor(data.kind))
+        Surface(shape = RoundedCornerShape(21.dp), tonalElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                Box(Modifier.fillMaxHeight().width(5.dp).background(accent))
+                Column(Modifier.width(84.dp).padding(start = 12.dp, top = 14.dp)) {
+                    Text(lesson.time.substringBefore('-'), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(lesson.time.substringAfter('-', ""), fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(Modifier.weight(1f).padding(vertical = 12.dp, horizontal = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = accent.copy(alpha = .18f),
+                            shape = RoundedCornerShape(8.dp)) {
+                            Text(SiteParser.shortKind(data.kind), fontSize = 12.sp,
+                                color = accent, fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp))
+                        }
+                        if (lesson.changed) {
+                            Spacer(Modifier.width(7.dp))
+                            Text("● ЗАМЕНА", color = MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(data.subject, style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(5.dp))
+                    Text(data.teacher, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Surface(shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text("Ауд. " + data.room, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
     }
 }

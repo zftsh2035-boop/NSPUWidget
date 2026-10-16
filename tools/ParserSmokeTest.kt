@@ -29,6 +29,8 @@ fun main() {
        Пятница 8:30-10:00 Сервис информационных систем, В.Ю.Верещагин, (л.: 7-10 нед. *), а. 213
        10:10-11:40 Сервис информационных систем, В.Ю.Верещагин, (п.з.: 7-12 нед. *), а. 411
        12:10-13:40 Физическая культура и спорт, Е.В.Шестаев, (п.з.: 5-15 нед. *), а. Спортзал #1
+       14:10-15:40 История России, В.И.Баяндин, (л.: 1-14 нед. *), а. 1п
+       15:50-17:20 Основы российской государственности, Н.В.Виниченко, (л.: 1-9 нед. *), а. 3п
        Суббота 10:10-11:40 Математика в профильной подготовке, А.А.Варжавин, а. 404, 28.11.2026 г. - зачёт
        Последнее изменение расписания - 15.10.2026
     """.trimIndent()
@@ -47,6 +49,18 @@ fun main() {
     check(mondayEnglish.count { SiteParser.applicable(it, monday9) } == 3)
     val olderMon = LocalDate.of(2026, 9, 7)
     check(mondayEnglish.none { SiteParser.applicable(it, olderMon) })
+    check(snapshot.lessons.count { it.day == 4 && SiteParser.applicable(it, LocalDate.of(2026, 10, 16)) } == 5)
+    check(SiteParser.shortKind("ЛЕКЦИЯ") == "Л.")
+    check(SiteParser.shortKind("ПРАКТИКА") == "П.З.")
+    check(SiteParser.shortKind("ЛАБОРАТОРНАЯ") == "Л.З.")
+    check(SiteParser.shortKind("ЗАЧЁТ") == "З.")
+    check(SiteParser.shortKind("ЭКЗАМЕН") == "Э.")
+    check(SiteParser.lessonKind(
+      Lesson(4,"08:30-10:00","Сервис, Преподаватель, (л.: 7-10 нед. *), а. 213"),
+      LocalDate.of(2026,10,16)) == "ЛЕКЦИЯ")
+    check(SiteParser.lessonKind(
+      Lesson(4,"10:10-11:40","Сервис, Преподаватель, (п.з.: 7-12 нед. *), а. 411"),
+      LocalDate.of(2026,10,16)) == "ПРАКТИКА")
     val saturday = snapshot.lessons.first { it.day == 5 }
     check(!SiteParser.applicable(saturday, LocalDate.of(2026, 10, 17)))
     check(SiteParser.applicable(saturday, LocalDate.of(2026, 11, 28)))

@@ -116,30 +116,56 @@ object SiteParser {
     fun formattedNoticeDate(@Suppress("UNUSED_PARAMETER") notice: Notice): String = "На сайте НГПУ"
 
 
-    data class LessonInfo(val subject: String, val teacher: String, val room: String, val kind: String)
-
-    fun details(l: Lesson): LessonInfo {
-        val subject = l.raw.substringBefore(',').trim()
-        val teacher = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim().take(60).ifBlank { "Не указан" }
-        val room = Regex("""(?i)(?:а\.|ауд\.?)\s*([^,;()]+)""")
-            .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
-        val kind = when {
-            l.raw.contains("экзамен", true) -> "ЭКЗАМЕН"
-            l.raw.contains("зачёт", true) || l.raw.contains("зачет", true) -> "ЗАЧЁТ"
-            l.raw.contains("л.з.", true) -> "ЛАБОРАТОРНАЯ"
-            l.raw.contains("п.з.", true) -> "ПРАКТИКА"
-            l.raw.contains("л.:", true) -> "ЛЕКЦИЯ"
+    /** Resolves multiple event types in one official slot for the selected calendar week. */
+    fun lessonKind(lesson: Lesson, date: LocalDate): String {
+        val raw = lesson.raw
+        if (raw.contains("экзамен", ignoreCase = true)) return "ЭКЗАМЕН"
+        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true)) return "ЗАЧЁТ"
+        val week = ((java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7) + 1).toInt()
+        val typeParts = Regex(
+            """(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""",
+            RegexOption.IGNORE_CASE
+        ).findAll(raw).toList()
+        val matched = typeParts.firstOrNull { match ->
+            Regex("""\d+\s*[-–]\s*\d+|\d+""").findAll(match.groupValues[2]).any { part ->
+                val ends = Regex("""\d+""").findAll(part.value).map { it.value.toInt() }.toList()
+                week in ends.first()..ends.last()
+            }
+        }?.groupValues?.get(1) ?: typeParts.firstOrNull()?.groupValues?.get(1)
+        return when (matched?.lowercase()) {
+            "л." -> "ЛЕКЦИЯ"
+            "п.з." -> "ПРАКТИКА"
+            "л.з." -> "ЛАБОРАТОРНАЯ"
             else -> "ЗАНЯТИЕ"
         }
-        return LessonInfo(subject, teacher, room, kind)
     }
 
-    fun lessonColor(kind: String): Int = when(kind) {
-        "ЛЕКЦИЯ" -> 0xFF60B9F5.toInt()
-        "ПРАКТИКА" -> 0xFF4ED1B4.toInt()
-        "ЛАБОРАТОРНАЯ" -> 0xFFB49CFA.toInt()
-        "ЗАЧЁТ", "ЭКЗАМЕН" -> 0xFFFFC470.toInt()
-        else -> 0xFF91A8C6.toInt()
+    data class LessonInfo(val subject: String, val teacher: String, val room: String, val kind: String)
+
+    fun details(l: Lesson, date: LocalDate = LocalDate.now()): LessonInfo {
+        val subject = l.raw.substringBefore(',').trim()
+        val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim()
+        val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
+        val room = Regex("""(?i)(?:а\.|ауд\.?)\s*([^,;()]+)""")
+            .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
+        return LessonInfo(subject, teacher, room, lessonKind(l, date))
+    }
+
+    fun lessonColor(kind: String): Int = when (kind) {
+        "ЛЕКЦИЯ" -> 0xFF6DBEFF.toInt()
+        "ПРАКТИКА" -> 0xFF4BE1CD.toInt()
+        "ЛАБОРАТОРНАЯ" -> 0xFFC3A9FF.toInt()
+        "ЗАЧЁТ", "ЭКЗАМЕН" -> 0xFFFFCD80.toInt()
+        else -> 0xFFA9BEDB.toInt()
+    }
+
+    fun shortKind(kind: String): String = when (kind) {
+        "ЛЕКЦИЯ" -> "Л."
+        "ПРАКТИКА" -> "П.З."
+        "ЛАБОРАТОРНАЯ" -> "Л.З."
+        "ЗАЧЁТ" -> "З."
+        "ЭКЗАМЕН" -> "Э."
+        else -> "—"
     }
 
     private fun hash(value: String): String {
