@@ -34,9 +34,11 @@ fun main() {
     """.trimIndent()
     val snapshot = SiteParser.parse(source)
     check(snapshot.notices.size == 1)
-    check(snapshot.notices.first().published == "2026-10-05")
+    check(snapshot.notices.first().published == null)
     check(snapshot.notices.first().text.contains("106 ауд."))
-    check(SiteParser.noticeIsOutdated(snapshot.notices.first(), LocalDate.of(2026, 10, 16)))
+    check(!SiteParser.noticeIsOutdated(snapshot.notices.first(), LocalDate.of(2026, 10, 16)))
+    check(SiteParser.noticeLabel(snapshot.notices.first()) == "ОБЪЯВЛЕНИЕ НГПУ")
+    check(SiteParser.subgroupFits(Lesson(0, "12:10-13:40", "Иностранный язык, А7"), "Все"))
     check(snapshot.lessons.size >= 17)
     val mondayEnglish = snapshot.lessons.filter { it.day == 0 && it.time == "12:10-13:40" }
     check(mondayEnglish.size == 3)

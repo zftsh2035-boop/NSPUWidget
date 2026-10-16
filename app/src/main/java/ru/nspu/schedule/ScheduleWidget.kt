@@ -45,14 +45,13 @@ class ScheduleWidget: AppWidgetProvider() {
             val day = date.dayOfWeek.value - 1
             val fmt = date.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))
             v.setTextViewText(R.id.header, "${if (day in 0..5) DAYS[day] else "Воскресенье"}, $fmt")
-            v.setTextViewText(R.id.subtitle, "НГПУ · 3.008.2.26 · ${Store.week(date)}-я нед. · ${Store.group(c)}")
+            v.setTextViewText(R.id.subtitle, "НГПУ · ${Store.scheduleGroupCode(c)} · ${Store.week(date)}-я нед. · ${Store.group(c)}")
 
             val notices = Store.notices(c)
             val unread = notices.count { it.isNew }
             val newest = notices.firstOrNull { it.isNew } ?: notices.firstOrNull()
             if (newest != null) {
-                val outdated = SiteParser.noticeIsOutdated(newest, LocalDate.now(ZONE))
-                val tag = when { newest.isNew -> "● НОВОЕ ОБЪЯВЛЕНИЕ"; outdated -> "АРХИВНОЕ ОБЪЯВЛЕНИЕ"; else -> "ОБЪЯВЛЕНИЕ НГПУ" }
+                val tag = if (newest.isNew) "● НОВОЕ ОБЪЯВЛЕНИЕ" else "ОБЪЯВЛЕНИЕ НГПУ"
                 v.setViewVisibility(R.id.noticeBox, View.VISIBLE)
                 v.setTextViewText(R.id.noticeLabel, tag)
                 v.setTextColor(R.id.noticeLabel, if (newest.isNew) 0xFFFFD27A.toInt() else 0xFFB8C9D9.toInt())
@@ -61,19 +60,29 @@ class ScheduleWidget: AppWidgetProvider() {
             } else v.setViewVisibility(R.id.noticeBox, View.GONE)
 
             val entries = Store.forDate(c, date)
-            val ids = intArrayOf(R.id.lesson1, R.id.lesson2, R.id.lesson3, R.id.lesson4)
-            ids.forEachIndexed { i, view ->
-                val lesson = entries.getOrNull(i)
-                val label = if (lesson == null) {
-                    if (i == 0) "Пар нет (или ещё нет данных)" else ""
-                } else {
-                    "${if (lesson.changed) "● ИЗМЕНЕНО · " else ""}${lesson.time}  ${lesson.raw.take(115)}"
+            val rows = arrayOf(
+                intArrayOf(R.id.lesson1Box, R.id.lesson1Time, R.id.lesson1Subject, R.id.lesson1Teacher, R.id.lesson1Room, R.id.lesson1Stripe),
+                intArrayOf(R.id.lesson2Box, R.id.lesson2Time, R.id.lesson2Subject, R.id.lesson2Teacher, R.id.lesson2Room, R.id.lesson2Stripe),
+                intArrayOf(R.id.lesson3Box, R.id.lesson3Time, R.id.lesson3Subject, R.id.lesson3Teacher, R.id.lesson3Room, R.id.lesson3Stripe),
+                intArrayOf(R.id.lesson4Box, R.id.lesson4Time, R.id.lesson4Subject, R.id.lesson4Teacher, R.id.lesson4Room, R.id.lesson4Stripe)
+            )
+            v.setViewVisibility(R.id.emptyState, if (entries.isEmpty()) View.VISIBLE else View.GONE)
+            v.setTextViewText(R.id.emptyState,
+                if (Store.cached(c).isEmpty()) "Загрузи расписание в приложении"
+                else "Занятий на этот день нет")
+            rows.forEachIndexed { index, ids ->
+                val lesson = entries.getOrNull(index)
+                v.setViewVisibility(ids[0], if (lesson == null) View.GONE else View.VISIBLE)
+                if (lesson != null) {
+                    val info = SiteParser.details(lesson)
+                    v.setTextViewText(ids[1], lesson.time.substringBefore("-") + "\n" + lesson.time.substringAfter("-"))
+                    v.setTextViewText(ids[2], info.subject)
+                    v.setTextViewText(ids[3], info.teacher)
+                    v.setTextViewText(ids[4], if (info.room == "—") "Не указана" else "ауд. " + info.room)
+                    v.setInt(ids[5], "setBackgroundColor", if (lesson.changed) 0xFFFFC470.toInt() else SiteParser.lessonColor(info.kind))
                 }
-                v.setTextViewText(view, label)
-                v.setViewVisibility(view, if (label.isBlank()) View.GONE else View.VISIBLE)
-                v.setTextColor(view, if (lesson?.changed == true) 0xFFFFD27A.toInt() else 0xFFECF4FF.toInt())
             }
-            val remainder = (entries.size - ids.size).coerceAtLeast(0)
+            val remainder = (entries.size - rows.size).coerceAtLeast(0)
             val status = if (Store.cached(c).isEmpty()) "Открой приложение для загрузки" else
                 "Обновлено ${Store.status(c)}${if (remainder > 0) " · ещё $remainder" else ""}"
             v.setTextViewText(R.id.status, if (Store.error(c).isNotEmpty()) "Офлайн · сохранённая версия" else status)

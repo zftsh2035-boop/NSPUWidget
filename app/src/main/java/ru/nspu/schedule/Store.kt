@@ -19,6 +19,20 @@ object Store {
     private fun prefs(c: Context) = c.getSharedPreferences("schedule", Context.MODE_PRIVATE)
     fun group(c: Context) = prefs(c).getString("subgroup", "А7") ?: "А7"
     fun setGroup(c: Context, value: String) { prefs(c).edit().putString("subgroup", value).apply() }
+    fun scheduleGroupId(c: Context) = prefs(c).getInt("group_id", 3328)
+    fun scheduleGroupName(c: Context) = prefs(c).getString("group_name", "3.008.2.26 ИСиТвО") ?: "3.008.2.26"
+    fun scheduleGroupCode(c: Context) = scheduleGroupName(c).substringBefore(" ").trim()
+    fun source(c: Context) = "https://schedule.nspu.ru/group_shedule.php?id=" + scheduleGroupId(c)
+
+    /** Cache and change-baseline belong to one selected group only. */
+    fun selectScheduleGroup(c: Context, id: Int, name: String) {
+        if (id == scheduleGroupId(c)) return
+        prefs(c).edit().putInt("group_id", id).putString("group_name", name)
+            .putString("subgroup", "Все").putInt("offset", 0)
+            .remove("lessons").remove("notices").remove("known_notice_ids")
+            .remove("archived_notices").remove("updated").remove("error")
+            .commit()
+    }
     fun date(c: Context): LocalDate = LocalDate.now(ZONE).plusDays(prefs(c).getInt("offset", 0).toLong())
     fun resetDate(c: Context) { prefs(c).edit().putInt("offset", 0).apply() }
     fun offset(c: Context, delta: Int) {
@@ -38,6 +52,13 @@ object Store {
         return (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
             Notice(o.getString("id"), o.getString("text"), o.optString("published").ifBlank { null }, o.optBoolean("isNew"))
+        }
+    }
+    fun archivedNotices(c: Context): List<Notice> {
+        val a = JSONArray(prefs(c).getString("archived_notices", "[]"))
+        return (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            Notice(o.getString("id"), o.getString("text"), o.optString("published").ifBlank { null }, false)
         }
     }
     fun status(c: Context) = prefs(c).getString("updated", "Ещё не загружено") ?: ""
@@ -62,20 +83,23 @@ object Store {
 
     /** No changes are committed if download/parsing/validation fails. */
     fun fetchAndSave(c: Context): SyncOutcome {
-        val connection = (URL(SOURCE).openConnection() as HttpURLConnection).apply {
+        val groupId = scheduleGroupId(c)
+        val url = source(c)
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15000
             readTimeout = 18000
-            setRequestProperty("User-Agent", "Mozilla/5.0 NSPUWidget/1.1")
+            setRequestProperty("User-Agent", "Mozilla/5.0 NSPUWidget/1.2")
             setRequestProperty("Accept", "text/html")
         }
         val snapshot: PageSnapshot
         try {
             if (connection.responseCode != 200) error("HTTP ${connection.responseCode}")
-            val doc = Jsoup.parse(connection.inputStream, null, SOURCE)
+            val doc = Jsoup.parse(connection.inputStream, null, url)
             doc.select("script,style,nav,footer").remove()
-            snapshot = SiteParser.parse(doc.body().text())
+            snapshot = SiteParser.parse(doc.body().text(), scheduleGroupCode(c))
         } finally { connection.disconnect() }
 
+        if (groupId != scheduleGroupId(c)) error("Группа поменялась во время загрузки")
         val oldLessons = cached(c)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
         val changes = snapshot.lessons.map { lesson ->
@@ -89,18 +113,22 @@ object Store {
         val previousNotices = notices(c).associateBy { it.id }
         val previousNoticeIds = prefs(c).getString("known_notice_ids", "")!!.split('|').filter { it.isNotBlank() }.toSet()
         val hasNoticeBaseline = prefs(c).contains("notices")
-        val today = LocalDate.now(ZONE)
         val currentNotices = snapshot.notices.map { notice ->
             notice.copy(isNew = (previousNotices[notice.id]?.isNew == true) ||
-                (hasNoticeBaseline && notice.id !in previousNoticeIds && !SiteParser.noticeIsOutdated(notice, today)))
+                (hasNoticeBaseline && notice.id !in previousNoticeIds))
         }
         val notifications = currentNotices.filter { it.id !in previousNoticeIds && it.isNew }
+        // A message leaves the current feed only if the official site removes it.
+        val active = currentNotices.map { it.id }.toSet()
+        val removed = (notices(c).filter { it.id !in active }.map { it.copy(isNew = false) } +
+            archivedNotices(c)).distinctBy { it.id }.filter { it.id !in active }.takeLast(100)
         val combinedKnown = (previousNoticeIds + currentNotices.map { it.id }).toList().takeLast(150)
         val timestamp = java.time.LocalDateTime.now(ZONE).toString().replace('T', ' ').take(16)
         // One atomic SharedPreferences update: lessons and announcements always match one successful fetch.
         val ok = prefs(c).edit()
             .putString("lessons", lessonsJson(changes).toString())
             .putString("notices", noticesJson(currentNotices).toString())
+            .putString("archived_notices", noticesJson(removed).toString())
             .putString("known_notice_ids", combinedKnown.joinToString("|"))
             .putString("updated", timestamp)
             .putString("error", "")

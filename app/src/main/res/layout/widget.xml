@@ -1,53 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/panel" android:padding="13dp" android:orientation="vertical">
-
+    android:orientation="vertical" android:background="@drawable/panel"
+    android:padding="12dp">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:gravity="center_vertical" android:orientation="horizontal">
         <TextView android:id="@+id/header" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:text="Расписание НГПУ" android:textColor="#FFFFFF"
-            android:textStyle="bold" android:textSize="16sp" android:maxLines="1" />
-        <TextView android:id="@+id/prev" android:layout_width="39dp" android:layout_height="43dp"
-            android:gravity="center" android:text="‹" android:textColor="#C6DAFF" android:textSize="27sp"
-            android:contentDescription="Предыдущий день" />
-        <TextView android:id="@+id/next" android:layout_width="39dp" android:layout_height="43dp"
-            android:gravity="center" android:text="›" android:textColor="#C6DAFF" android:textSize="27sp"
-            android:contentDescription="Следующий день" />
+            android:layout_weight="1" android:text="НГПУ · Сегодня"
+            android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold"
+            android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/prev" android:layout_width="35dp" android:layout_height="42dp"
+            android:gravity="center" android:text="‹" android:textColor="#C3DCFC"
+            android:textSize="26sp"/>
+        <TextView android:id="@+id/next" android:layout_width="35dp" android:layout_height="42dp"
+            android:gravity="center" android:text="›" android:textColor="#C3DCFC"
+            android:textSize="26sp"/>
     </LinearLayout>
-
-    <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Загрузка…" android:textColor="#A9BFD5" android:textSize="12sp" android:paddingBottom="6dp" />
-
+    <TextView android:id="@+id/subtitle" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="Выбрана группа"
+        android:paddingBottom="9dp" android:textColor="#AFC5DC"
+        android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
     <LinearLayout android:id="@+id/noticeBox" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:orientation="vertical"
-        android:background="@drawable/notice_panel" android:padding="10dp" android:layout_marginBottom="8dp"
-        android:visibility="gone" android:contentDescription="Открыть объявления НГПУ">
+        android:background="@drawable/notice_panel" android:padding="9dp"
+        android:layout_marginBottom="8dp" android:visibility="gone">
         <TextView android:id="@+id/noticeLabel" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textColor="#FFD27A"
-            android:textSize="11sp" android:textStyle="bold" />
+            android:layout_height="wrap_content" android:textSize="10sp"
+            android:textColor="#FFDB96" android:textStyle="bold"/>
         <TextView android:id="@+id/noticeText" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textColor="#FFF3DA" android:textSize="12sp"
-            android:maxLines="3" android:ellipsize="end" android:paddingTop="3dp" />
+            android:layout_height="wrap_content" android:paddingTop="3dp"
+            android:textSize="11sp" android:textColor="#FFF2D9"
+            android:maxLines="2" android:ellipsize="end"/>
         <TextView android:id="@+id/noticeMeta" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textColor="#C6AE8C"
-            android:textSize="10sp" android:paddingTop="3dp" />
+            android:layout_height="wrap_content" android:paddingTop="3dp"
+            android:textSize="10sp" android:textColor="#CAB99F"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/lesson1Box" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:background="@drawable/lesson_panel"
+        android:layout_marginBottom="5dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:paddingEnd="9dp" android:visibility="gone">
+        <TextView android:id="@+id/lesson1Stripe" android:layout_width="4dp"
+            android:layout_height="52dp" android:background="#60B9F5"/>
+        <TextView android:id="@+id/lesson1Time" android:layout_width="68dp"
+            android:layout_height="wrap_content" android:paddingStart="8dp" android:gravity="center_vertical"
+            android:textColor="#F6FAFF" android:textSize="12sp" android:textStyle="bold"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/lesson1Subject" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#FFFFFF"
+                android:textStyle="bold" android:textSize="12sp" android:maxLines="2" android:ellipsize="end"/>
+            <TextView android:id="@+id/lesson1Teacher" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#C0CFE1"
+                android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:paddingTop="4dp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/lesson1Room" android:layout_width="65dp"
+            android:layout_height="wrap_content" android:gravity="center" android:padding="5dp"
+            android:layout_marginStart="4dp" android:background="@drawable/room_panel"
+            android:textColor="#9BD7FF" android:textSize="11sp" android:maxLines="2"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/lesson2Box" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:background="@drawable/lesson_panel"
+        android:layout_marginBottom="5dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:paddingEnd="9dp" android:visibility="gone">
+        <TextView android:id="@+id/lesson2Stripe" android:layout_width="4dp"
+            android:layout_height="52dp" android:background="#60B9F5"/>
+        <TextView android:id="@+id/lesson2Time" android:layout_width="68dp"
+            android:layout_height="wrap_content" android:paddingStart="8dp" android:gravity="center_vertical"
+            android:textColor="#F6FAFF" android:textSize="12sp" android:textStyle="bold"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/lesson2Subject" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#FFFFFF"
+                android:textStyle="bold" android:textSize="12sp" android:maxLines="2" android:ellipsize="end"/>
+            <TextView android:id="@+id/lesson2Teacher" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#C0CFE1"
+                android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:paddingTop="4dp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/lesson2Room" android:layout_width="65dp"
+            android:layout_height="wrap_content" android:gravity="center" android:padding="5dp"
+            android:layout_marginStart="4dp" android:background="@drawable/room_panel"
+            android:textColor="#9BD7FF" android:textSize="11sp" android:maxLines="2"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/lesson3Box" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:background="@drawable/lesson_panel"
+        android:layout_marginBottom="5dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:paddingEnd="9dp" android:visibility="gone">
+        <TextView android:id="@+id/lesson3Stripe" android:layout_width="4dp"
+            android:layout_height="52dp" android:background="#60B9F5"/>
+        <TextView android:id="@+id/lesson3Time" android:layout_width="68dp"
+            android:layout_height="wrap_content" android:paddingStart="8dp" android:gravity="center_vertical"
+            android:textColor="#F6FAFF" android:textSize="12sp" android:textStyle="bold"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/lesson3Subject" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#FFFFFF"
+                android:textStyle="bold" android:textSize="12sp" android:maxLines="2" android:ellipsize="end"/>
+            <TextView android:id="@+id/lesson3Teacher" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#C0CFE1"
+                android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:paddingTop="4dp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/lesson3Room" android:layout_width="65dp"
+            android:layout_height="wrap_content" android:gravity="center" android:padding="5dp"
+            android:layout_marginStart="4dp" android:background="@drawable/room_panel"
+            android:textColor="#9BD7FF" android:textSize="11sp" android:maxLines="2"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/lesson4Box" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:background="@drawable/lesson_panel"
+        android:layout_marginBottom="5dp" android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:paddingEnd="9dp" android:visibility="gone">
+        <TextView android:id="@+id/lesson4Stripe" android:layout_width="4dp"
+            android:layout_height="52dp" android:background="#60B9F5"/>
+        <TextView android:id="@+id/lesson4Time" android:layout_width="68dp"
+            android:layout_height="wrap_content" android:paddingStart="8dp" android:gravity="center_vertical"
+            android:textColor="#F6FAFF" android:textSize="12sp" android:textStyle="bold"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/lesson4Subject" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#FFFFFF"
+                android:textStyle="bold" android:textSize="12sp" android:maxLines="2" android:ellipsize="end"/>
+            <TextView android:id="@+id/lesson4Teacher" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textColor="#C0CFE1"
+                android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:paddingTop="4dp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/lesson4Room" android:layout_width="65dp"
+            android:layout_height="wrap_content" android:gravity="center" android:padding="5dp"
+            android:layout_marginStart="4dp" android:background="@drawable/room_panel"
+            android:textColor="#9BD7FF" android:textSize="11sp" android:maxLines="2"/>
     </LinearLayout>
 
-    <TextView android:id="@+id/lesson1" style="@style/Lesson" />
-    <TextView android:id="@+id/lesson2" style="@style/Lesson" />
-    <TextView android:id="@+id/lesson3" style="@style/Lesson" />
-    <TextView android:id="@+id/lesson4" style="@style/Lesson" />
-
+    <TextView android:id="@+id/emptyState" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="На этот день нет занятий"
+        android:textColor="#AFC5DC" android:textSize="12sp"
+        android:padding="12dp" android:visibility="gone"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginTop="4dp">
-        <TextView android:id="@+id/status" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:textColor="#8DA6BF" android:textSize="10sp"
-            android:maxLines="2" />
-        <TextView android:id="@+id/today" android:layout_width="58dp" android:layout_height="40dp"
-            android:gravity="center" android:text="Сегодня" android:textColor="#C6DAFF" android:textSize="11sp"
-            android:contentDescription="Вернуться к сегодняшнему дню" />
-        <TextView android:id="@+id/refresh" android:layout_width="41dp" android:layout_height="40dp"
-            android:gravity="center" android:text="⟳" android:textColor="#80D7B0" android:textSize="25sp"
-            android:contentDescription="Обновить расписание" />
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/status" android:layout_width="0dp"
+            android:layout_height="wrap_content" android:layout_weight="1"
+            android:textColor="#8CA5BE" android:textSize="10sp"
+            android:maxLines="2"/>
+        <TextView android:id="@+id/today" android:layout_width="65dp" android:layout_height="40dp"
+            android:gravity="center" android:text="Сегодня" android:textSize="11sp"
+            android:textColor="#D4E4F7"/>
+        <TextView android:id="@+id/refresh" android:layout_width="35dp" android:layout_height="40dp"
+            android:gravity="center" android:text="⟳" android:textColor="#78D7B0"
+            android:textSize="24sp"/>
     </LinearLayout>
 </LinearLayout>

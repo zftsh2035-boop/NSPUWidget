@@ -18,18 +18,18 @@ object SiteParser {
     private val weeksPattern = Regex("\\(([^)]*нед\\.[^)]*)\\)", RegexOption.IGNORE_CASE)
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
 
-    fun parse(text: String): PageSnapshot {
+    fun parse(text: String, selectedGroup: String = "3.008.2.26"): PageSnapshot {
         val flat = text.replace('\u00a0', ' ').replace(Regex("\\s+"), " ").trim()
-        require(flat.contains("Группа 3.008.2.26") || flat.contains("3.008.2.26 ИСиТвО")) {
-            "Это не страница группы 3.008.2.26"
+        require(flat.contains("Группа " + selectedGroup) || flat.contains(">> " + selectedGroup)) {
+            "Это не страница выбранной группы: " + selectedGroup
         }
-        val notices = parseNotices(flat)
+        val notices = parseNotices(flat, selectedGroup)
         val weekMarker = flat.indexOf("Числитель", ignoreCase = true)
         require(weekMarker >= 0) { "На странице не найдено расписание по дням" }
         val end = flat.indexOf("Последнее изменение расписания", weekMarker).let { if (it >= 0) it else flat.length }
         val schedule = flat.substring(weekMarker, end)
         val dayHeaders = weekdayPattern.findAll(schedule).toList()
-        require(dayHeaders.size >= 5) { "На странице не найдены дни недели" }
+        require(dayHeaders.isNotEmpty()) { "На странице не найдены дни недели" }
         val entries = mutableListOf<Lesson>()
         for ((i, dayMatch) in dayHeaders.withIndex()) {
             val dayIndex = weekdays.indexOf(dayMatch.value)
@@ -48,17 +48,17 @@ object SiteParser {
                 }
             }
         }
-        require(entries.size >= 12) { "Слишком мало занятий (${entries.size}): формат страницы мог измениться" }
+        require(entries.isNotEmpty()) { "В расписании не найдено занятий; формат страницы мог измениться" }
         return PageSnapshot(entries.distinctBy { key(it) + "/" + it.raw }, notices)
     }
 
-    fun parseNotices(flat: String): List<Notice> {
+    fun parseNotices(flat: String, selectedGroup: String = "3.008.2.26"): List<Notice> {
         val beforeSemester = Regex("(?<!\\d)1\\s+семестр(?![А-Яа-яЁё])", RegexOption.IGNORE_CASE).find(flat)?.range?.first ?: -1
         if (beforeSemester < 0) return emptyList()
         val preamble = flat.substring(0, beforeSemester)
-        val lastGroup = preamble.lastIndexOf("3.008.2.26")
+        val lastGroup = preamble.lastIndexOf(selectedGroup)
         if (lastGroup < 0) return emptyList()
-        val banner = preamble.substring(lastGroup + "3.008.2.26".length).trim()
+        val banner = preamble.substring(lastGroup + selectedGroup.length).trim()
         val headings = noticeHeading.findAll(banner).toList()
         // The university sometimes publishes a banner without the usual salutation.
         val pieces = if (headings.isEmpty()) {
@@ -71,13 +71,8 @@ object SiteParser {
         return pieces.mapNotNull { piece ->
             val message = piece.trim().replace(Regex("\\s+"), " ")
             if (message.length < 22) null else {
-                val matchDate = datePattern.find(message)
-                val published = matchDate?.let { d ->
-                    try {
-                        LocalDate.of(d.groupValues[3].toInt(), d.groupValues[2].toInt(), d.groupValues[1].toInt()).toString()
-                    } catch (_: Exception) { null }
-                }
-                Notice(hash(message), message, published)
+                // Dates in the text are NOT necessarily publication dates.
+                Notice(hash(message), message)
             }
         }.distinctBy { it.id }
     }
@@ -100,6 +95,7 @@ object SiteParser {
     }
 
     fun subgroupFits(raw: String, subgroup: String): Boolean {
+        if (subgroup == "Все") return true
         if (raw.contains("Немецкий язык", true)) return subgroup == "Немецкий"
         val codes = subgroupPattern.findAll(raw).map { "А" + it.groupValues[1] }.toList()
         return codes.isEmpty() || codes.contains(subgroup)
@@ -112,12 +108,39 @@ object SiteParser {
         return "${l.day}|${l.time}|$name|$subgroup"
     }
 
-    fun noticeIsOutdated(notice: Notice, today: LocalDate): Boolean =
-        notice.published?.let { runCatching { LocalDate.parse(it).isBefore(today.minusDays(7)) }.getOrDefault(false) } ?: false
+    /** Arbitrary notices have no reliable expiry rule. The site controls visibility. */
+    @Suppress("UNUSED_PARAMETER")
+    fun noticeIsOutdated(notice: Notice, today: LocalDate): Boolean = false
+    fun noticeLabel(notice: Notice): String = if (notice.isNew) "● НОВОЕ" else "ОБЪЯВЛЕНИЕ НГПУ"
 
-    fun formattedNoticeDate(notice: Notice): String = notice.published?.let {
-        runCatching { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru-RU"))) }.getOrDefault(it)
-    } ?: "Дата не указана"
+    fun formattedNoticeDate(@Suppress("UNUSED_PARAMETER") notice: Notice): String = "На сайте НГПУ"
+
+
+    data class LessonInfo(val subject: String, val teacher: String, val room: String, val kind: String)
+
+    fun details(l: Lesson): LessonInfo {
+        val subject = l.raw.substringBefore(',').trim()
+        val teacher = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim().take(60).ifBlank { "Не указан" }
+        val room = Regex("""(?i)(?:а\.|ауд\.?)\s*([^,;()]+)""")
+            .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
+        val kind = when {
+            l.raw.contains("экзамен", true) -> "ЭКЗАМЕН"
+            l.raw.contains("зачёт", true) || l.raw.contains("зачет", true) -> "ЗАЧЁТ"
+            l.raw.contains("л.з.", true) -> "ЛАБОРАТОРНАЯ"
+            l.raw.contains("п.з.", true) -> "ПРАКТИКА"
+            l.raw.contains("л.:", true) -> "ЛЕКЦИЯ"
+            else -> "ЗАНЯТИЕ"
+        }
+        return LessonInfo(subject, teacher, room, kind)
+    }
+
+    fun lessonColor(kind: String): Int = when(kind) {
+        "ЛЕКЦИЯ" -> 0xFF60B9F5.toInt()
+        "ПРАКТИКА" -> 0xFF4ED1B4.toInt()
+        "ЛАБОРАТОРНАЯ" -> 0xFFB49CFA.toInt()
+        "ЗАЧЁТ", "ЭКЗАМЕН" -> 0xFFFFC470.toInt()
+        else -> 0xFF91A8C6.toInt()
+    }
 
     private fun hash(value: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(value.lowercase().toByteArray(Charsets.UTF_8))
