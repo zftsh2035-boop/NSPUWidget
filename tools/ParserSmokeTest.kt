@@ -50,11 +50,11 @@ fun main() {
     val olderMon = LocalDate.of(2026, 9, 7)
     check(mondayEnglish.none { SiteParser.applicable(it, olderMon) })
     check(snapshot.lessons.count { it.day == 4 && SiteParser.applicable(it, LocalDate.of(2026, 10, 16)) } == 5)
-    check(SiteParser.shortKind("ЛЕКЦИЯ") == "Л.")
-    check(SiteParser.shortKind("ПРАКТИКА") == "П.З.")
-    check(SiteParser.shortKind("ЛАБОРАТОРНАЯ") == "Л.З.")
-    check(SiteParser.shortKind("ЗАЧЁТ") == "З.")
-    check(SiteParser.shortKind("ЭКЗАМЕН") == "Э.")
+    check(SiteParser.shortKind("ЛЕКЦИЯ") == "л.")
+    check(SiteParser.shortKind("ПРАКТИКА") == "п.з.")
+    check(SiteParser.shortKind("ЛАБОРАТОРНАЯ") == "л.з.")
+    check(SiteParser.shortKind("ЗАЧЁТ") == "зач.")
+    check(SiteParser.shortKind("ЭКЗАМЕН") == "экз.")
     check(SiteParser.lessonKind(
       Lesson(4,"08:30-10:00","Сервис, Преподаватель, (л.: 7-10 нед. *), а. 213"),
       LocalDate.of(2026,10,16)) == "ЛЕКЦИЯ")
