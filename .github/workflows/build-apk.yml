@@ -35,10 +35,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Install Android SDK Platform 35
+      - name: Ensure Android SDK 35
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-35" ] && [ -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            echo "Android SDK 35 already installed"
+          else
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n1)"
+            test -n "$SDKMANAGER"
+            "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK artifact
