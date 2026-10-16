@@ -53,3 +53,24 @@ jobs:
           name: NSPUWidget-Android-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish APK in GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
+          test -n "$VERSION"
+          TAG="v$VERSION"
+          APK="NSPUWidget-${TAG}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          sha256sum "$APK" > "${APK}.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" "${APK}.sha256" --clobber
+          else
+            gh release create "$TAG" "$APK" "${APK}.sha256" \
+              --title "NSPUWidget $TAG" \
+              --notes "Нативный Android-виджет расписания НГПУ. Это тестовая debug-сборка APK: выбор групп, цветные пары, объявления и фоновая проверка обновлений." \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
