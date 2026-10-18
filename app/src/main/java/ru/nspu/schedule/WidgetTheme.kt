@@ -18,7 +18,7 @@ object WidgetTheme {
     fun mode(context: Context): WidgetMode {
         val systemDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
             Configuration.UI_MODE_NIGHT_YES
-        return mode(AppSettings.theme(context), systemDark)
+        return mode(AppSettings.widgetTheme(context), systemDark)
     }
     data class Palette(
         val panel: Int,

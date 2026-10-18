@@ -14,6 +14,9 @@ object AppSettings {
 
     private fun prefs(c: Context) = c.getSharedPreferences("app-settings", Context.MODE_PRIVATE)
 
+    private val supportedThemes = setOf(SYSTEM, LIGHT, DARK, AMOLED, NEON)
+    fun isSupportedTheme(value: String): Boolean = value in supportedThemes
+
     fun channel(c: Context): String =
         prefs(c).getString("channel", STABLE)?.takeIf { it == STABLE || it == DEV } ?: STABLE
 
@@ -23,15 +26,26 @@ object AppSettings {
     }
 
     fun theme(c: Context): String =
-        prefs(c).getString("theme", SYSTEM)?.takeIf {
-            it in listOf(SYSTEM, LIGHT, DARK, AMOLED, NEON)
-        } ?: SYSTEM
+        prefs(c).getString("theme", SYSTEM)?.takeIf(::isSupportedTheme) ?: SYSTEM
 
     fun setTheme(c: Context, theme: String) {
-        require(theme in listOf(SYSTEM, LIGHT, DARK, AMOLED))
+        require(isSupportedTheme(theme))
         prefs(c).edit().putString("theme", theme).apply()
-        // Push the saved Material theme to every home-screen widget immediately.
-        ScheduleWidget.renderAll(c.applicationContext)
+        // App appearance must NOT change the separate widget appearance.
+    }
+
+    fun widgetTheme(c: Context): String =
+        prefs(c).getString("widget_theme", SYSTEM)?.takeIf(::isSupportedTheme) ?: SYSTEM
+
+    fun setWidgetTheme(c: Context, theme: String) {
+        require(isSupportedTheme(theme))
+        prefs(c).edit().putString("widget_theme", theme).apply()
+        val app = c.applicationContext
+        // RemoteViews inflation is IPC; never let a widget/launcher failure close Activity.
+        Thread {
+            runCatching { ScheduleWidget.renderAll(app) }
+                .onFailure { android.util.Log.e("NSPUWidget", "Widget theme update failed", it) }
+        }.start()
     }
 
     fun animateHighlight(c: Context) = prefs(c).getBoolean("animate_highlight", true)

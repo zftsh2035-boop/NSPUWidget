@@ -157,6 +157,7 @@ class MainActivity : ComponentActivity() {
         var autoScroll by remember { mutableStateOf(AppSettings.autoScroll(this@MainActivity)) }
         var updatePrompts by remember { mutableStateOf(AppSettings.updatePrompts(this@MainActivity)) }
         var showAbout by remember { mutableStateOf(false) }
+        var widgetTheme by remember { mutableStateOf(AppSettings.widgetTheme(this@MainActivity)) }
         var checkCounter by remember { mutableIntStateOf(0) }
         var manualCheck by remember { mutableStateOf(false) }
         LaunchedEffect(channel, checkCounter) {
@@ -496,29 +497,31 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     item {
-                        SettingsPanel(title = "Тема приложения") {
-                            val themes = listOf(
-                                AppSettings.SYSTEM to "Системная",
-                                AppSettings.LIGHT to "Светлая",
-                                AppSettings.DARK to "Тёмная",
-                                AppSettings.AMOLED to "AMOLED",
-                                AppSettings.NEON to "Neon"
-                            )
-                            themes.forEach { (value, title) ->
-                                Row(Modifier.fillMaxWidth().clickable { changeTheme(value) }
-                                    .padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    RadioButton(selected = currentTheme == value,
-                                        onClick = { changeTheme(value) })
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(title, style = MaterialTheme.typography.bodyMedium)
-                                }
+                        SettingsPanel(title = "Оформление") {
+                            Text("Тема приложения",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold)
+                            AppearanceChoices(currentTheme, changeTheme)
+                            Text("Тема виджета",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 10.dp))
+                            AppearanceChoices(widgetTheme) { selected ->
+                                widgetTheme = selected
+                                AppSettings.setWidgetTheme(this@MainActivity, selected)
                             }
-                            Text("Системная тема следует Android; Dynamic Color используется на Android 12+. AMOLED сохраняет системный акцент, но делает фон полностью чёрным. Neon использует чёрный фон и яркие кислотные зелёные, голубые и розовые акценты. Виджеты автоматически следуют выбранной теме.",
+                            Text(
+                                "Темы приложения и виджета настраиваются независимо. " +
+                                "Системная тема следует Android; Dynamic Color используется на Android 12+. " +
+                                "AMOLED сохраняет системный акцент, но делает фон полностью чёрным. " +
+                                "Neon — чёрный фон с кислотными акцентами.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
                         }
                     }
-                    item {
+                                        item {
                         SettingsPanel(title = "Расписание") {
                             SettingsToggle("Плавная пульсация выбранной пары", animateHighlight) {
                                 animateHighlight = it
@@ -676,6 +679,51 @@ class MainActivity : ComponentActivity() {
                 Text(title, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
                 content()
+            }
+        }
+    }
+
+    @Composable
+    private fun AppearanceChoices(selected: String, onSelect: (String) -> Unit) {
+        // Two compact rows of pills, matching the reference design. No oversized radio list.
+        val choices = listOf(
+            listOf(
+                AppSettings.SYSTEM to "Системная",
+                AppSettings.LIGHT to "Светлая",
+                AppSettings.DARK to "Тёмная"
+            ),
+            listOf(
+                AppSettings.AMOLED to "AMOLED",
+                AppSettings.NEON to "Neon"
+            )
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            choices.forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (value, caption) ->
+                        val chosen = selected == value
+                        Surface(
+                            modifier = Modifier.weight(1f)
+                                .height(44.dp)
+                                .clickable { onSelect(value) },
+                            shape = RoundedCornerShape(13.dp),
+                            color = if (chosen) MaterialTheme.colorScheme.secondaryContainer
+                                else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                1.dp, if (chosen) MaterialTheme.colorScheme.secondary
+                                    else MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(caption, fontSize = 13.sp,
+                                    fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer
+                                        else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

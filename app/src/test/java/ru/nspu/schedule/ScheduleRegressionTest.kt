@@ -204,4 +204,23 @@ class ScheduleRegressionTest {
             WidgetTheme.lessonAccent("ЭКЗАМЕН", WidgetMode.NEON))
     }
 
+    @Test fun neonCanBeStoredAsSupportedThemeWithoutCrashing() {
+        // v2.2 regression: the chooser showed Neon but setTheme() rejected it.
+        assertTrue(AppSettings.isSupportedTheme(AppSettings.NEON))
+        assertTrue(AppSettings.isSupportedTheme(AppSettings.SYSTEM))
+        assertTrue(AppSettings.isSupportedTheme(AppSettings.LIGHT))
+        assertTrue(AppSettings.isSupportedTheme(AppSettings.DARK))
+        assertTrue(AppSettings.isSupportedTheme(AppSettings.AMOLED))
+        assertFalse(AppSettings.isSupportedTheme("unknown"))
+    }
+
+    @Test fun appAndWidgetCanResolveDifferentPalettes() {
+        val applicationChoice = AppSettings.NEON
+        val widgetChoice = AppSettings.LIGHT
+        assertTrue(AppSettings.isSupportedTheme(applicationChoice))
+        assertTrue(AppSettings.isSupportedTheme(widgetChoice))
+        assertEquals(WidgetMode.LIGHT, WidgetTheme.mode(widgetChoice, true))
+        assertEquals(WidgetMode.NEON, WidgetTheme.mode(applicationChoice, true))
+    }
+
 }
