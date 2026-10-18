@@ -97,7 +97,7 @@ object SiteParser {
     /** Only codes actually mentioned next to a language lesson are selectable. */
     fun languageOptions(lessons: List<Lesson>): List<String> {
         val languageLessons = lessons.filter {
-            Regex("""(?i)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
+            Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
                 .containsMatchIn(it.raw)
         }
         val groups = languageLessons.flatMap { subgroupPattern.findAll(it.raw).map { m -> "А" + m.groupValues[1] }.toList() }
