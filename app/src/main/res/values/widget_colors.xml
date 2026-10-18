@@ -1,0 +1,5 @@
+<resources>
+    <color name="widget_base">#122337</color>
+    <color name="widget_card">#26394F</color>
+    <color name="widget_highlight">#25518D</color>
+</resources>

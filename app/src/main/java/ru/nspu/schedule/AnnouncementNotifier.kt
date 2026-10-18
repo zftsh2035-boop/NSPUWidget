@@ -14,6 +14,26 @@ import androidx.core.content.ContextCompat
 object AnnouncementNotifier {
     private const val CHANNEL_ID = "nspu-announcements"
 
+    fun showChanges(c: Context, changes: List<ScheduleChange>) {
+        if (changes.isEmpty()) return
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(c, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val manager = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel("nspu-changes",
+            "Изменения расписания", NotificationManager.IMPORTANCE_DEFAULT))
+        val pending = PendingIntent.getActivity(c, 15,
+            Intent(c, MainActivity::class.java).putExtra("show_changes", true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val body = changes.take(3).joinToString("\n") { it.message }
+        manager.notify(3329, NotificationCompat.Builder(c, "nspu-changes")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(if (changes.size == 1) "Изменение расписания НГПУ"
+                else "Изменений расписания: " + changes.size)
+            .setContentText(changes.first().message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(pending).setAutoCancel(true).build())
+    }
+
     fun show(c: Context, fresh: List<Notice>) {
         if (fresh.isEmpty()) return
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(c, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return

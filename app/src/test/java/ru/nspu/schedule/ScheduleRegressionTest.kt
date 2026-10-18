@@ -77,4 +77,44 @@ class ScheduleRegressionTest {
         assertEquals(0, DaySwipe.direction(Float.NaN, 64f))
     }
 
+    @Test fun countdownAndProgress() {
+        val day = LocalDate.of(2026,10,19)
+        val item = Lesson(0, "8:30-10:00", "Алгебра, преподаватель, а. 405")
+        val pending = FocusDisplay.of(LocalDateTime.of(2026,10,19,8,20),
+            FocusedLesson(day,item,false))!!
+        assertEquals("Через 10 мин", pending.label)
+        assertEquals(0f, pending.progress, 0.001f)
+        val live = FocusDisplay.of(LocalDateTime.of(2026,10,19,9,0),
+            FocusedLesson(day,item,true))!!
+        assertEquals("Осталось 60 мин", live.label)
+        assertEquals(1f/3f, live.progress, 0.02f)
+        val tomorrow = FocusDisplay.of(LocalDateTime.of(2026,10,18,17,0),
+            FocusedLesson(day,item,false))!!
+        assertTrue(tomorrow.label.startsWith("Через 15 ч"))
+    }
+
+    @Test fun semanticChangeLogUsesActualFields() {
+        val date = LocalDate.of(2026, 10, 19)
+        val term = LocalDate.of(2026, 9, 1)
+        val old = listOf(Lesson(0,"8:30-10:00",
+            "Алгебра, И.И.Петров, (п.з.: 1-16 нед.), а. 411"))
+        val fresh = listOf(Lesson(0,"8:30-10:00",
+            "Алгебра, И.И.Петров, (п.з.: 1-16 нед.), а. 213"))
+        val diff = ChangeLog.diff(old,fresh,date,term)
+        assertEquals(1,diff.size)
+        assertTrue(diff[0].message.contains("411 → 213"))
+        assertTrue(ChangeLog.diff(old,old,date,term).isEmpty())
+    }
+
+    @Test fun semesterHeaderAndWeekAreDetected() {
+        assertEquals(LocalDate.of(2026,9,1),
+            SiteParser.termStart("1 семестр Теоретическое обучение с 01.09.2026 г."))
+        assertEquals(LocalDate.of(2027,2,1),
+            SiteParser.termStart("2 семестр Теоретическое обучение с 01.02.2027 г."))
+        assertEquals(1,SiteParser.academicWeek(LocalDate.of(2027,2,1),
+            LocalDate.of(2027,2,1)))
+        assertEquals(2,SiteParser.academicWeek(LocalDate.of(2027,2,8),
+            LocalDate.of(2027,2,1)))
+    }
+
 }

@@ -9,6 +9,7 @@ class Sync(ctx: Context, params: WorkerParameters): CoroutineWorker(ctx, params)
         val outcome = Store.fetchAndSave(applicationContext)
         ScheduleWidget.renderAll(applicationContext)
         AnnouncementNotifier.show(applicationContext, outcome.newNotices)
+        AnnouncementNotifier.showChanges(applicationContext, outcome.changes)
         Result.success()
     } catch (e: Exception) {
         Store.saveError(applicationContext, e)

@@ -27,13 +27,14 @@ class LessonListService : RemoteViewsService() {
 
         override fun getViewAt(position: Int): RemoteViews? {
             val lesson = lessons.getOrNull(position) ?: return null
-            val detail = SiteParser.details(lesson, date)
+            val detail = SiteParser.details(lesson, date, Store.termStart(context))
             val selected = LessonFocus.matches(focus, date, lesson)
             val color = if (selected) 0xFFFFE083.toInt() else SiteParser.lessonColor(detail.kind)
             return RemoteViews(context.packageName,
                 if (selected) R.layout.lesson_item_focus else R.layout.lesson_item).apply {
                 setTextViewText(R.id.lessonState,
-                    if (focus?.ongoing == true) "● ИДЁТ СЕЙЧАС" else "● СЛЕДУЮЩАЯ")
+                    if (focus?.ongoing == true) "● до " + lesson.time.substringAfter('-')
+                    else "● в " + lesson.time.substringBefore('-'))
                 setViewVisibility(R.id.lessonState, if (selected) View.VISIBLE else View.GONE)
                 setTextViewText(R.id.lessonTimeStart, lesson.time.substringBefore('-'))
                 setTextViewText(R.id.lessonTimeEnd, lesson.time.substringAfter('-', ""))

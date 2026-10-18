@@ -17,6 +17,7 @@ import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -71,7 +73,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         val refreshTick = rerender // Read state to reflect background sync/cache changes.
-        var selectedTab by remember { mutableIntStateOf(if (intent.getBooleanExtra("show_notices", false)) 1 else 0) }
+        var selectedTab by remember {
+            mutableIntStateOf(when {
+                intent.getBooleanExtra("show_changes", false) -> 2
+                intent.getBooleanExtra("show_notices", false) -> 1
+                else -> 0
+            })
+        }
+        val listState = rememberLazyListState()
         val date = Store.date(this)
         val lessons = Store.forDate(this, date)
         val notices = Store.notices(this)
@@ -79,6 +88,8 @@ class MainActivity : ComponentActivity() {
         val subgroup = Store.group(this)
         val availableSubgroups = Store.availableSubgroups(this)
         val focusedLesson = Store.focus(this)
+        val now = LocalDateTime.now(ZONE)
+        val changes = Store.changeHistory(this)
         val lastUpdate = Store.status(this)
         val error = Store.error(this)
         var picker by remember { mutableIntStateOf(0) }
@@ -115,6 +126,15 @@ class MainActivity : ComponentActivity() {
             }.start()
         }
 
+        // Scroll only when the focused lesson/day changes; don't fight user scrolling.
+        val focusIndex = lessons.indexOfFirst { LessonFocus.matches(focusedLesson, date, it) }
+        LaunchedEffect(selectedTab, date, focusIndex, group) {
+            if (selectedTab == 0 && focusIndex >= 0) {
+                val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+                    1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
+                listState.animateScrollToItem(prefix + focusIndex)
+            } else if (selectedTab != 0) listState.scrollToItem(0)
+        }
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
@@ -135,6 +155,9 @@ class MainActivity : ComponentActivity() {
                         onClick = { selectedTab = 1 },
                         icon = { Text("◉", fontSize = 22.sp) },
                         label = { Text("Объявления" + if (notices.any { it.isNew }) " ●" else "") })
+                    NavigationBarItem(selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        icon = { Text("↺", fontSize = 22.sp) }, label = { Text("Изменения") })
                 }
             }
         ) { insets ->
@@ -160,6 +183,7 @@ class MainActivity : ComponentActivity() {
                 )
             } else Modifier
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize().padding(insets).then(daySwipeModifier),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -264,9 +288,9 @@ class MainActivity : ComponentActivity() {
                     items(lessons) { lesson ->
                         LessonCard(lesson, date,
                             LessonFocus.matches(focusedLesson, date, lesson),
-                            focusedLesson?.ongoing == true)
+                            focusedLesson?.ongoing == true, now)
                     }
-                } else {
+                } else if (selectedTab == 1) {
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Объявления · " + notices.size,
@@ -299,6 +323,23 @@ class MainActivity : ComponentActivity() {
                         OutlinedButton(onClick = {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this@MainActivity))))
                         }) { Text("Открыть оригинал на сайте НГПУ ↗") }
+                    }
+                } else {
+                    item {
+                        Text("История изменений", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold)
+                    }
+                    if (changes.isEmpty()) item {
+                        Text("Подтверждённых изменений пока нет. После первой синхронизации приложение будет сохранять замену аудитории, преподавателя, времени и типа пары.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    items(changes) { entry ->
+                        Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text(entry, modifier = Modifier.padding(14.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
                 item {
@@ -366,9 +407,11 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean, ongoing: Boolean) {
-        val data = SiteParser.details(lesson, date)
+    private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean,
+        ongoing: Boolean, now: LocalDateTime) {
+        val data = SiteParser.details(lesson, date, Store.termStart(this))
         val accent = Color(SiteParser.lessonColor(data.kind))
+        val timing = if (highlighted) FocusDisplay.of(now, FocusedLesson(date, lesson, ongoing)) else null
         // Only the focused card pulses. Compose stops driving frames when the activity
         // is not visible; the Android home-screen widget deliberately remains static.
         val pulse = if (highlighted && android.animation.ValueAnimator.areAnimatorsEnabled()) {
@@ -423,10 +466,17 @@ class MainActivity : ComponentActivity() {
                                 alpha = 0.22f + 0.78f * pulse
                             ), fontSize = 16.sp, fontWeight = FontWeight.Black)
                             Spacer(Modifier.width(5.dp))
-                            Text(if (ongoing) "ИДЁТ СЕЙЧАС" else "СЛЕДУЮЩАЯ",
+                            Text(timing?.label ?: "Ближайшая пара",
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
                         }
+                    }
+                    if (highlighted && timing != null) {
+                        Spacer(Modifier.height(5.dp))
+                        LinearProgressIndicator(progress = { timing.progress },
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .15f))
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(data.subject, style = MaterialTheme.typography.titleSmall,

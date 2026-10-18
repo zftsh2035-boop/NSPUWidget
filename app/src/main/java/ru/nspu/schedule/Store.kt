@@ -13,7 +13,8 @@ import java.time.temporal.ChronoUnit
 const val SOURCE = "https://schedule.nspu.ru/group_shedule.php?id=3328"
 val ZONE: ZoneId = ZoneId.of("Asia/Novosibirsk")
 val DAYS = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
-data class SyncOutcome(val newNotices: List<Notice>, val newLessonChanges: Int)
+data class SyncOutcome(val newNotices: List<Notice>, val newLessonChanges: Int,
+    val changes: List<ScheduleChange> = emptyList())
 
 object Store {
     private fun prefs(c: Context) = c.getSharedPreferences("schedule", Context.MODE_PRIVATE)
@@ -35,6 +36,7 @@ object Store {
         prefs(c).edit().putInt("group_id", id).putString("group_name", name)
             .putString("subgroup", "Все").putInt("offset", 0)
             .remove("lessons").remove("notices").remove("known_notice_ids")
+            .remove("term_start").remove("change_history").remove("dismissed_notices")
             .remove("updated").remove("error")
             .commit()
     }
@@ -58,7 +60,16 @@ object Store {
         val shown = ChronoUnit.DAYS.between(LocalDate.now(ZONE), date(c)).toInt()
         p.edit().putInt("offset", (shown + delta).coerceIn(-7, 35)).apply()
     }
-    fun week(date: LocalDate): Int = (ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7 + 1).toInt()
+    fun termStart(c: Context): LocalDate = runCatching {
+        LocalDate.parse(prefs(c).getString("term_start", "2026-09-01"))
+    }.getOrDefault(LocalDate.of(2026, 9, 1))
+    fun week(date: LocalDate): Int = SiteParser.academicWeek(date)
+    fun week(c: Context, date: LocalDate): Int = SiteParser.academicWeek(date, termStart(c))
+
+    fun changeHistory(c: Context): List<String> {
+        val array = JSONArray(prefs(c).getString("change_history", "[]"))
+        return (0 until array.length()).map { array.getString(it) }
+    }
     fun cached(c: Context): List<Lesson> {
         val a = JSONArray(prefs(c).getString("lessons", "[]"))
         return (0 until a.length()).map { i ->
@@ -73,12 +84,26 @@ object Store {
             Notice(o.getString("id"), o.getString("text"), o.optString("published").ifBlank { null }, o.optBoolean("isNew"))
         }
     }
+    /** Hiding affects only this phone's home-screen widget, never the official site or app. */
+    fun widgetNotices(c: Context): List<Notice> {
+        val hidden = prefs(c).getStringSet("dismissed_notices", emptySet()) ?: emptySet()
+        return notices(c).filterNot { it.id in hidden }
+    }
+    fun dismissWidgetNotice(c: Context, noticeId: String) {
+        if (noticeId.isBlank() || notices(c).none { it.id == noticeId }) return
+        val hidden = (prefs(c).getStringSet("dismissed_notices", emptySet()) ?: emptySet()).toMutableSet()
+        hidden += noticeId
+        prefs(c).edit().putStringSet("dismissed_notices", hidden).apply()
+        val saved = notices(c).map { if (it.id == noticeId) it.copy(isNew = false) else it }
+        prefs(c).edit().putString("notices", noticesJson(saved).toString()).apply()
+    }
+
     fun status(c: Context) = prefs(c).getString("updated", "Ещё не загружено") ?: ""
     fun error(c: Context) = prefs(c).getString("error", "") ?: ""
     fun forDate(c: Context, date: LocalDate): List<Lesson> {
         val day = date.dayOfWeek.value - 1
         if (day !in 0..5) return emptyList()
-        return cached(c).filter { it.day == day && SiteParser.applicable(it, date) && SiteParser.subgroupFits(it.raw, group(c)) }
+        return cached(c).filter { it.day == day && SiteParser.applicable(it, date, termStart(c)) && SiteParser.subgroupFits(it.raw, group(c)) }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
     }
     fun markAllRead(c: Context) {
@@ -112,7 +137,10 @@ object Store {
         } finally { connection.disconnect() }
 
         if (groupId != scheduleGroupId(c)) error("Группа поменялась во время загрузки")
-        val oldLessons = cached(c)
+        val start = snapshot.termStart ?: termStart(c)
+        val changedTerm = snapshot.termStart != null && snapshot.termStart != termStart(c)
+        val oldLessons = if (changedTerm) emptyList() else cached(c)
+        val semanticChanges = ChangeLog.diff(oldLessons, snapshot.lessons, LocalDate.now(ZONE), start)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
         val changes = snapshot.lessons.map { lesson ->
             val before = previous[SiteParser.key(lesson)]
@@ -131,17 +159,28 @@ object Store {
         }
         val notifications = currentNotices.filter { it.id !in previousNoticeIds && it.isNew }
         val combinedKnown = (previousNoticeIds + currentNotices.map { it.id }).toList().takeLast(150)
+        // Keep only ids still present: if university edits a notice, its new id appears again.
+        val activeIds = currentNotices.map { it.id }.toSet()
+        val hiddenNow = (prefs(c).getStringSet("dismissed_notices", emptySet()) ?: emptySet())
+            .filterTo(mutableSetOf()) { it in activeIds }
         val timestamp = java.time.LocalDateTime.now(ZONE).toString().replace('T', ' ').take(16)
+        val log = (semanticChanges.map { "$timestamp · " + it.message } + changeHistory(c))
+            .distinct().take(100)
+        val logJson = JSONArray().also { a -> log.forEach { a.put(it) } }
+
         // One atomic SharedPreferences update: lessons and announcements always match one successful fetch.
         val ok = prefs(c).edit()
             .putString("lessons", lessonsJson(changes).toString())
             .putString("notices", noticesJson(currentNotices).toString())
+            .putStringSet("dismissed_notices", hiddenNow)
             .putString("known_notice_ids", combinedKnown.joinToString("|"))
+            .putString("term_start", start.toString())
+            .putString("change_history", logJson.toString())
             .putString("updated", timestamp)
             .putString("error", "")
             .commit()
         if (!ok) error("Не удалось сохранить расписание")
-        return SyncOutcome(notifications, newLessonChanges)
+        return SyncOutcome(notifications, newLessonChanges, semanticChanges)
     }
     fun saveError(c: Context, e: Throwable) { prefs(c).edit().putString("error", e.message ?: "Ошибка сети").apply() }
 }

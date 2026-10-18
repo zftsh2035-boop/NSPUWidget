@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter
 /** Pure parsing code: independently testable without Android or network access. */
 data class Lesson(val day: Int, val time: String, val raw: String, val changed: Boolean = false)
 data class Notice(val id: String, val text: String, val published: String? = null, val isNew: Boolean = false)
-data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>)
+data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>, val termStart: LocalDate? = null)
 
 object SiteParser {
     private val weekdays = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
@@ -49,11 +49,11 @@ object SiteParser {
             }
         }
         require(entries.isNotEmpty()) { "В расписании не найдено занятий; формат страницы мог измениться" }
-        return PageSnapshot(entries.distinctBy { key(it) + "/" + it.raw }, notices)
+        return PageSnapshot(entries.distinctBy { key(it) + "/" + it.raw }, notices, termStart(flat))
     }
 
     fun parseNotices(flat: String, selectedGroup: String = "3.008.2.26"): List<Notice> {
-        val beforeSemester = Regex("(?<!\\d)1\\s+семестр(?![А-Яа-яЁё])", RegexOption.IGNORE_CASE).find(flat)?.range?.first ?: -1
+        val beforeSemester = Regex("(?<!\\d)[12]\\s+семестр(?![А-Яа-яЁё])", RegexOption.IGNORE_CASE).find(flat)?.range?.first ?: -1
         if (beforeSemester < 0) return emptyList()
         val preamble = flat.substring(0, beforeSemester)
         val lastGroup = preamble.lastIndexOf(selectedGroup)
@@ -77,9 +77,24 @@ object SiteParser {
         }.distinctBy { it.id }
     }
 
-    fun applicable(lesson: Lesson, date: LocalDate): Boolean {
-        val week = ((java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7) + 1).toInt()
-        if (week !in 1..16) return false
+    /** The university publishes the dates for each semester in the page header. */
+    fun termStart(text: String): LocalDate? {
+        val m = Regex("""(?iu)[12]\s+семестр.{0,120}?теоретическое\s+обучение\s+с\s+(\d{1,2}\.\d{1,2}\.20\d{2})""")
+            .find(text) ?: return null
+        return runCatching {
+            val date = m.groupValues[1].split('.').map { it.toInt() }
+            LocalDate.of(date[2], date[1], date[0])
+        }.getOrNull()
+    }
+
+    fun academicWeek(date: LocalDate, start: LocalDate = LocalDate.of(2026, 9, 1)): Int {
+        val firstMonday = start.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        return (java.time.temporal.ChronoUnit.DAYS.between(firstMonday, date) / 7 + 1).toInt()
+    }
+
+    fun applicable(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): Boolean {
+        val week = academicWeek(date, termStart)
+        if (week !in 1..24) return false
         val weeks = weeksPattern.find(lesson.raw)?.groupValues?.get(1)
         if (weeks == null) {
             // Dated exams/consultations appear outside a normal week range.
@@ -129,11 +144,11 @@ object SiteParser {
 
 
     /** Resolves multiple event types in one official slot for the selected calendar week. */
-    fun lessonKind(lesson: Lesson, date: LocalDate): String {
+    fun lessonKind(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): String {
         val raw = lesson.raw
         if (raw.contains("экзамен", ignoreCase = true) || Regex("""(?i)(?<![а-яё])экз\.?(?![а-яё])""").containsMatchIn(raw)) return "ЭКЗАМЕН"
         if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true) || Regex("""(?i)(?<![а-яё])зач\.?(?![а-яё])""").containsMatchIn(raw)) return "ЗАЧЁТ"
-        val week = ((java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7) + 1).toInt()
+        val week = academicWeek(date, termStart)
         val typeParts = Regex(
             """(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""",
             RegexOption.IGNORE_CASE
@@ -154,13 +169,13 @@ object SiteParser {
 
     data class LessonInfo(val subject: String, val teacher: String, val room: String, val kind: String)
 
-    fun details(l: Lesson, date: LocalDate = LocalDate.now()): LessonInfo {
+    fun details(l: Lesson, date: LocalDate = LocalDate.now(), termStart: LocalDate = LocalDate.of(2026, 9, 1)): LessonInfo {
         val subject = l.raw.substringBefore(',').trim()
         val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim()
         val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
         val room = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
             .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
-        return LessonInfo(subject, teacher, room, lessonKind(l, date))
+        return LessonInfo(subject, teacher, room, lessonKind(l, date, termStart))
     }
 
     fun lessonColor(kind: String): Int = when (kind) {
