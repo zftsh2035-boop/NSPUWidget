@@ -183,4 +183,25 @@ class ScheduleRegressionTest {
         assertTrue(result.none { it is DayRow.WindowRow })
     }
 
+
+    @Test fun widgetUsesExactAppThemeAndFollowsSystemWhenSelected() {
+        assertEquals(WidgetMode.LIGHT, WidgetTheme.mode(AppSettings.LIGHT, true))
+        assertEquals(WidgetMode.DARK, WidgetTheme.mode(AppSettings.DARK, false))
+        assertEquals(WidgetMode.AMOLED, WidgetTheme.mode(AppSettings.AMOLED, false))
+        assertEquals(WidgetMode.NEON, WidgetTheme.mode(AppSettings.NEON, false))
+        assertEquals(WidgetMode.LIGHT, WidgetTheme.mode(AppSettings.SYSTEM, false))
+        assertEquals(WidgetMode.DARK, WidgetTheme.mode(AppSettings.SYSTEM, true))
+        assertEquals(WidgetMode.LIGHT, WidgetTheme.mode("unknown", false))
+    }
+
+    @Test fun neonLessonColorsAreDistinctAndBright() {
+        val kinds = listOf("ЛЕКЦИЯ", "ПРАКТИКА", "ЛАБОРАТОРНАЯ", "ЗАЧЁТ", "ЭКЗАМЕН")
+        val accents = kinds.map { WidgetTheme.lessonAccent(it, WidgetMode.NEON) }
+        assertEquals(kinds.size, accents.toSet().size)
+        assertNotEquals(WidgetTheme.lessonAccent("ЛЕКЦИЯ", WidgetMode.NEON),
+            WidgetTheme.lessonAccent("ЛЕКЦИЯ", WidgetMode.LIGHT))
+        assertNotEquals(WidgetTheme.lessonAccent("ЗАЧЁТ", WidgetMode.NEON),
+            WidgetTheme.lessonAccent("ЭКЗАМЕН", WidgetMode.NEON))
+    }
+
 }

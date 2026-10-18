@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
             val systemDark = isSystemInDarkTheme()
             val dark = when (currentTheme) {
                 AppSettings.LIGHT -> false
-                AppSettings.DARK, AppSettings.AMOLED -> true
+                AppSettings.DARK, AppSettings.AMOLED, AppSettings.NEON -> true
                 else -> systemDark
             }
             val base = when {
@@ -94,7 +94,26 @@ class MainActivity : ComponentActivity() {
                 dark -> darkColorScheme(primary = Color(0xFF9CC5FF), secondary = Color(0xFF5DE0C9))
                 else -> lightColorScheme(primary = Blue, secondary = Sea, background = Color(0xFFF6F8FE))
             }
-            val colors = if (currentTheme == AppSettings.AMOLED) base.copy(
+            val colors = if (currentTheme == AppSettings.NEON) {
+                // Fluorescent accents on a true-black AMOLED canvas, not the Android wallpaper palette.
+                darkColorScheme(
+                    primary = Color(0xFF39FF14), onPrimary = Color.Black,
+                    primaryContainer = Color(0xFF102700), onPrimaryContainer = Color(0xFFCBFFAE),
+                    secondary = Color(0xFF00F5FF), onSecondary = Color.Black,
+                    secondaryContainer = Color(0xFF003137), onSecondaryContainer = Color(0xFFA7F9FF),
+                    tertiary = Color(0xFFFF00EB), onTertiary = Color.Black,
+                    tertiaryContainer = Color(0xFF3A0038), onTertiaryContainer = Color(0xFFFFBBF8),
+                    error = Color(0xFFFF4265), onError = Color.Black,
+                    background = Color.Black, onBackground = Color.White,
+                    surface = Color.Black, onSurface = Color.White,
+                    surfaceVariant = Color(0xFF141414), onSurfaceVariant = Color(0xFFC8EFCE),
+                    surfaceContainerLowest = Color.Black, surfaceContainerLow = Color(0xFF090909),
+                    surfaceContainer = Color(0xFF101010), surfaceContainerHigh = Color(0xFF161616),
+                    surfaceContainerHighest = Color(0xFF202020),
+                    surfaceDim = Color.Black, surfaceBright = Color(0xFF242424),
+                    outline = Color(0xFF39FF14), outlineVariant = Color(0xFF215F19)
+                )
+            } else if (currentTheme == AppSettings.AMOLED) base.copy(
                 background = Color.Black, surface = Color.Black,
                 surfaceContainerLowest = Color.Black,
                 surfaceContainerLow = Color(0xFF0C0C0C),
@@ -482,7 +501,8 @@ class MainActivity : ComponentActivity() {
                                 AppSettings.SYSTEM to "Системная",
                                 AppSettings.LIGHT to "Светлая",
                                 AppSettings.DARK to "Тёмная",
-                                AppSettings.AMOLED to "AMOLED"
+                                AppSettings.AMOLED to "AMOLED",
+                                AppSettings.NEON to "Neon"
                             )
                             themes.forEach { (value, title) ->
                                 Row(Modifier.fillMaxWidth().clickable { changeTheme(value) }
@@ -493,7 +513,7 @@ class MainActivity : ComponentActivity() {
                                     Text(title, style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
-                            Text("Системная тема следует Android; Dynamic Color используется на Android 12+. AMOLED сохраняет системный акцент, но делает фон полностью чёрным.",
+                            Text("Системная тема следует Android; Dynamic Color используется на Android 12+. AMOLED сохраняет системный акцент, но делает фон полностью чёрным. Neon использует чёрный фон и яркие кислотные зелёные, голубые и розовые акценты. Виджеты автоматически следуют выбранной теме.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -712,7 +732,9 @@ class MainActivity : ComponentActivity() {
         val data = remember(lesson, date) {
             SiteParser.details(lesson, date, Store.termStart(this@MainActivity))
         }
-        val accent = Color(SiteParser.lessonColor(data.kind))
+        val accent = Color(if (AppSettings.theme(this@MainActivity) == AppSettings.NEON)
+            WidgetTheme.lessonAccent(data.kind, WidgetMode.NEON)
+            else SiteParser.lessonColor(data.kind))
         val timing = if (highlighted) FocusDisplay.of(now, FocusedLesson(date, lesson, ongoing)) else null
         // Only the focused card pulses. Compose stops driving frames when the activity
         // is not visible; the Android home-screen widget deliberately remains static.

@@ -29,6 +29,10 @@ class ScheduleWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        if (intent.action == Intent.ACTION_CONFIGURATION_CHANGED) {
+            renderAll(context)
+            return
+        }
         if (intent.action == "ru.nspu.schedule.NAV") {
             when (intent.getStringExtra("cmd")) {
                 "prev" -> Store.offset(context, -1)
@@ -62,9 +66,18 @@ class ScheduleWidget : AppWidgetProvider() {
             val compact = heightDp < 210
             val tiny = heightDp < 145 || widthDp < 185
             val medium = heightDp in 210..344
+            val widgetPalette = WidgetTheme.palette(context)
+            val widgetMode = WidgetTheme.mode(context)
             if (compact) {
                 val layout = if (tiny) R.layout.widget_compact_tiny else R.layout.widget_compact
                 val v = RemoteViews(context.packageName, layout)
+                v.setInt(R.id.compactRoot, "setBackgroundResource", widgetPalette.panel)
+                v.setInt(R.id.compactKind, "setBackgroundResource", widgetPalette.badge)
+                v.setTextColor(R.id.compactHeader, widgetPalette.muted)
+                v.setTextColor(R.id.compactSubject, widgetPalette.ink)
+                v.setTextColor(R.id.compactTeacher, widgetPalette.body)
+                v.setTextColor(R.id.compactTime, widgetPalette.accent)
+                v.setTextColor(R.id.compactRoom, widgetPalette.room)
                 val focus = Store.focus(context)
                 v.setTextViewText(R.id.compactHeader,
                     if (tiny) Store.scheduleGroupCode(context)
@@ -81,7 +94,7 @@ class ScheduleWidget : AppWidgetProvider() {
                     v.setTextViewText(R.id.compactKind, SiteParser.shortKind(d.kind))
                     v.setTextViewText(R.id.compactRoom,
                         if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)
-                    v.setTextColor(R.id.compactKind, SiteParser.lessonColor(d.kind))
+                    v.setTextColor(R.id.compactKind, WidgetTheme.lessonAccent(d.kind, widgetMode))
                 } else {
                     v.setTextViewText(R.id.compactSubject, "Расписание пока не загружено")
                     v.setTextViewText(R.id.compactTeacher, "Нажми, чтобы открыть приложение")
@@ -97,6 +110,21 @@ class ScheduleWidget : AppWidgetProvider() {
                 return
             }
             val v = RemoteViews(context.packageName, R.layout.widget)
+            v.setInt(R.id.widgetRoot, "setBackgroundResource", widgetPalette.panel)
+            v.setInt(R.id.noticeBox, "setBackgroundResource", widgetPalette.notice)
+            v.setTextColor(R.id.header, widgetPalette.ink)
+            v.setTextColor(R.id.prev, widgetPalette.accent)
+            v.setTextColor(R.id.next, widgetPalette.accent)
+            v.setTextColor(R.id.subtitle, widgetPalette.muted)
+            v.setTextColor(R.id.noticeLabel, widgetPalette.noticeTitle)
+            v.setTextColor(R.id.noticeText, widgetPalette.noticeText)
+            v.setTextColor(R.id.noticeMeta, widgetPalette.muted)
+            v.setTextColor(R.id.noticeDismiss, widgetPalette.accent)
+            v.setTextColor(R.id.lessonCount, widgetPalette.body)
+            v.setTextColor(R.id.emptyState, widgetPalette.muted)
+            v.setTextColor(R.id.status, widgetPalette.muted)
+            v.setTextColor(R.id.today, widgetPalette.accent)
+            v.setTextColor(R.id.refresh, widgetPalette.accent)
             val date = Store.date(context)
             val name = if (date.dayOfWeek.value in 1..6) DAYS[date.dayOfWeek.value - 1] else "Воскресенье"
             v.setTextViewText(R.id.header,

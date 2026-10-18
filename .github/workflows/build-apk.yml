@@ -108,7 +108,12 @@ jobs:
           FILE_BYTES=$(stat -c%s "$NAME")
           BASELINE=9437386
           DIFF=$(awk -v old="$BASELINE" -v now="$FILE_BYTES" 'BEGIN {printf "%.1f", 100*(now-old)/old}')
-          cat RELEASE_NOTES_v2.1.md > release-notes.md
+          NOTES_FILE="RELEASE_NOTES_${TAG}.md"
+          if [[ -f "$NOTES_FILE" ]]; then
+            cat "$NOTES_FILE" > release-notes.md
+          else
+            printf '# NSPUWidget %s\n\n## Что изменилось\n\n- Исправления и улучшения стабильной версии.\n' "$TAG" > release-notes.md
+          fi
           {
             printf '\n### Измеренные характеристики APK\n\n'
             printf -- '- **Файл:** `%s`\n' "$NAME"

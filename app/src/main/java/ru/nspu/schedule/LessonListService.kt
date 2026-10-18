@@ -15,12 +15,16 @@ class LessonListService : RemoteViewsService() {
         private var rows: List<DayRow> = emptyList()
         private var date = Store.date(context)
         private var focus: FocusedLesson? = null
+        private var themeMode = WidgetTheme.mode(context)
+        private var colors = WidgetTheme.palette(context)
 
         override fun onCreate() = onDataSetChanged()
         override fun onDataSetChanged() {
             date = Store.date(context)
             rows = DayTimeline.build(Store.forDate(context, date))
             focus = Store.focus(context)
+            themeMode = WidgetTheme.mode(context)
+            colors = WidgetTheme.palette(context)
         }
         override fun onDestroy() { rows = emptyList() }
         override fun getCount(): Int = rows.size
@@ -29,6 +33,9 @@ class LessonListService : RemoteViewsService() {
             val row = rows.getOrNull(position) ?: return null
             if (row is DayRow.WindowRow) {
                 return RemoteViews(context.packageName, R.layout.lesson_window).apply {
+                    setInt(R.id.windowCard, "setBackgroundResource", colors.card)
+                    setTextColor(R.id.windowHeading, colors.accent)
+                    setTextColor(R.id.windowMessage, colors.body)
                     setTextViewText(R.id.windowHeading, row.heading + " · " + row.time)
                     setTextViewText(R.id.windowMessage, row.message)
                     setOnClickFillInIntent(R.id.windowCard, Intent())
@@ -37,9 +44,21 @@ class LessonListService : RemoteViewsService() {
             val lesson = (row as DayRow.LessonRow).lesson
             val detail = SiteParser.details(lesson, date, Store.termStart(context))
             val selected = LessonFocus.matches(focus, date, lesson)
-            val color = if (selected) 0xFFFFE083.toInt() else SiteParser.lessonColor(detail.kind)
+            val color = if (selected) {
+                if (themeMode == WidgetMode.DARK) 0xFFFFE083.toInt() else colors.accent
+            } else WidgetTheme.lessonAccent(detail.kind, themeMode)
             return RemoteViews(context.packageName,
                 if (selected) R.layout.lesson_item_focus else R.layout.lesson_item).apply {
+                setInt(R.id.lessonCard, "setBackgroundResource",
+                    if (selected) colors.focusCard else colors.card)
+                setInt(R.id.lessonRoom, "setBackgroundResource", colors.badge)
+                setTextColor(R.id.lessonTimeStart, colors.ink)
+                setTextColor(R.id.lessonTimeEnd, colors.muted)
+                setTextColor(R.id.lessonSubject, colors.ink)
+                setTextColor(R.id.lessonTeacher, colors.body)
+                setTextColor(R.id.lessonRoom, colors.room)
+                setTextColor(R.id.lessonState, colors.accent)
+                setTextColor(R.id.lessonChanged, colors.change)
                 setTextViewText(R.id.lessonState,
                     if (focus?.ongoing == true) "● до " + lesson.time.substringAfter('-')
                     else "● в " + lesson.time.substringBefore('-'))

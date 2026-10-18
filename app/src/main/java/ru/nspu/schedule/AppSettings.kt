@@ -10,6 +10,7 @@ object AppSettings {
     const val LIGHT = "light"
     const val DARK = "dark"
     const val AMOLED = "amoled"
+    const val NEON = "neon"
 
     private fun prefs(c: Context) = c.getSharedPreferences("app-settings", Context.MODE_PRIVATE)
 
@@ -23,12 +24,14 @@ object AppSettings {
 
     fun theme(c: Context): String =
         prefs(c).getString("theme", SYSTEM)?.takeIf {
-            it in listOf(SYSTEM, LIGHT, DARK, AMOLED)
+            it in listOf(SYSTEM, LIGHT, DARK, AMOLED, NEON)
         } ?: SYSTEM
 
     fun setTheme(c: Context, theme: String) {
         require(theme in listOf(SYSTEM, LIGHT, DARK, AMOLED))
         prefs(c).edit().putString("theme", theme).apply()
+        // Push the saved Material theme to every home-screen widget immediately.
+        ScheduleWidget.renderAll(c.applicationContext)
     }
 
     fun animateHighlight(c: Context) = prefs(c).getBoolean("animate_highlight", true)
