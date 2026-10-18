@@ -12,21 +12,29 @@ class LessonListService : RemoteViewsService() {
         Factory(applicationContext)
 
     private class Factory(private val context: Context) : RemoteViewsFactory {
-        private var lessons: List<Lesson> = emptyList()
+        private var rows: List<DayRow> = emptyList()
         private var date = Store.date(context)
         private var focus: FocusedLesson? = null
 
         override fun onCreate() = onDataSetChanged()
         override fun onDataSetChanged() {
             date = Store.date(context)
-            lessons = Store.forDate(context, date)
+            rows = DayTimeline.build(Store.forDate(context, date))
             focus = Store.focus(context)
         }
-        override fun onDestroy() { lessons = emptyList() }
-        override fun getCount(): Int = lessons.size
+        override fun onDestroy() { rows = emptyList() }
+        override fun getCount(): Int = rows.size
 
         override fun getViewAt(position: Int): RemoteViews? {
-            val lesson = lessons.getOrNull(position) ?: return null
+            val row = rows.getOrNull(position) ?: return null
+            if (row is DayRow.WindowRow) {
+                return RemoteViews(context.packageName, R.layout.lesson_window).apply {
+                    setTextViewText(R.id.windowHeading, row.heading + " · " + row.time)
+                    setTextViewText(R.id.windowMessage, row.message)
+                    setOnClickFillInIntent(R.id.windowCard, Intent())
+                }
+            }
+            val lesson = (row as DayRow.LessonRow).lesson
             val detail = SiteParser.details(lesson, date, Store.termStart(context))
             val selected = LessonFocus.matches(focus, date, lesson)
             val color = if (selected) 0xFFFFE083.toInt() else SiteParser.lessonColor(detail.kind)
@@ -50,8 +58,9 @@ class LessonListService : RemoteViewsService() {
         }
 
         override fun getLoadingView(): RemoteViews? = null
-        override fun getViewTypeCount(): Int = 1
+        // Two lesson layouts (normal / focused) and the free-period card.
+        override fun getViewTypeCount(): Int = 3
         override fun getItemId(position: Int): Long = position.toLong()
-        override fun hasStableIds(): Boolean = true
+        override fun hasStableIds(): Boolean = false
     }
 }

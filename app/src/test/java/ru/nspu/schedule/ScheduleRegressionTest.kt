@@ -126,4 +126,61 @@ class ScheduleRegressionTest {
         assertFalse(UpdateChecker.newer("bad-version", "1.7"))
     }
 
+    @Test fun coffeeWindowBetweenFirstAndThirdLesson() {
+        val entries = DayTimeline.build(listOf(
+            Lesson(0, "8:30-10:00", "Математика"),
+            Lesson(0, "12:10-13:40", "Информатика")
+        ))
+        assertEquals(3, entries.size)
+        assertTrue(entries[0] is DayRow.LessonRow)
+        val gap = entries[1] as DayRow.WindowRow
+        assertEquals("10:10", gap.start)
+        assertEquals("11:40", gap.end)
+        assertEquals(1, gap.periods)
+        assertTrue(gap.message.contains("Может, по кофе?"))
+        assertTrue(entries[2] is DayRow.LessonRow)
+    }
+
+    @Test fun noWindowForNormalBreakOrAfterLastLesson() {
+        val result = DayTimeline.build(listOf(
+            Lesson(0, "8:30-10:00", "Математика"),
+            Lesson(0, "10:10-11:40", "История"),
+            Lesson(0, "12:10-13:40", "Физика")
+        ))
+        assertEquals(3, result.size)
+        assertTrue(result.all { it is DayRow.LessonRow })
+        assertEquals(0, DayTimeline.build(emptyList()).size)
+        assertEquals(1, DayTimeline.build(listOf(Lesson(0,"12:10-13:40","Физика"))).size)
+    }
+
+    @Test fun twoConsecutiveMissingLessonsAreOneWindow() {
+        val result = DayTimeline.build(listOf(
+            Lesson(2, "8:30-10:00", "Математика"),
+            Lesson(2, "14:10-15:40", "История")
+        ))
+        val gap = result[1] as DayRow.WindowRow
+        assertEquals("10:10", gap.start)
+        assertEquals("13:40", gap.end)
+        assertEquals(2, gap.periods)
+    }
+
+    @Test fun sameTimeSubgroupsDoNotIntroduceFalseWindows() {
+        val result = DayTimeline.build(listOf(
+            Lesson(0,"8:30-10:00","Иностранный язык, А7"),
+            Lesson(0,"8:30-10:00","Иностранный язык, А8"),
+            Lesson(0,"10:10-11:40","Информатика")
+        ))
+        assertEquals(3, result.size)
+        assertTrue(result.all { it is DayRow.LessonRow })
+    }
+
+    @Test fun unknownLectureTimesDoNotCreateGuessWindows() {
+        val result = DayTimeline.build(listOf(
+            Lesson(0,"8:30-10:00","Первая пара"),
+            Lesson(0,"13:55-15:25","Особое время"),
+            Lesson(0,"15:50-17:20","Пятая пара")
+        ))
+        assertTrue(result.none { it is DayRow.WindowRow })
+    }
+
 }

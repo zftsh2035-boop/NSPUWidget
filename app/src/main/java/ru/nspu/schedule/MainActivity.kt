@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
         val listState = rememberLazyListState()
         val date = Store.date(this)
         val lessons = Store.forDate(this, date)
+        val timeline = DayTimeline.build(lessons)
         val notices = Store.notices(this)
         val group = Store.scheduleGroupName(this)
         val subgroup = Store.group(this)
@@ -138,10 +139,12 @@ class MainActivity : ComponentActivity() {
         }
 
         // Scroll only when the focused lesson/day changes; don't fight user scrolling.
-        val focusIndex = lessons.indexOfFirst { LessonFocus.matches(focusedLesson, date, it) }
+        val focusIndex = timeline.indexOfFirst { row ->
+            row is DayRow.LessonRow && LessonFocus.matches(focusedLesson, date, row.lesson)
+        }
         LaunchedEffect(selectedTab, date, focusIndex, group) {
             if (selectedTab == 0 && focusIndex >= 0) {
-                val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+                val prefix = 2 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
                     1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
                 listState.animateScrollToItem(prefix + focusIndex)
             } else if (selectedTab != 0) listState.scrollToItem(0)
@@ -327,10 +330,13 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
-                    items(lessons) { lesson ->
-                        LessonCard(lesson, date,
-                            LessonFocus.matches(focusedLesson, date, lesson),
-                            focusedLesson?.ongoing == true, now)
+                    items(timeline) { row ->
+                        when (row) {
+                            is DayRow.LessonRow -> LessonCard(row.lesson, date,
+                                LessonFocus.matches(focusedLesson, date, row.lesson),
+                                focusedLesson?.ongoing == true, now)
+                            is DayRow.WindowRow -> GapCard(row)
+                        }
                     }
                 } else if (selectedTab == 1) {
                     item {
@@ -469,6 +475,31 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }, confirmButton = { TextButton(onClick = { subgroupPicker = false }) { Text("Отмена") } })
+        }
+    }
+
+    @Composable
+    private fun GapCard(gap: DayRow.WindowRow) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(19.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .48f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .38f))
+        ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("☕", fontSize = 26.sp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(gap.heading + " · " + gap.time,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.height(3.dp))
+                    Text(gap.message, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
         }
     }
 
