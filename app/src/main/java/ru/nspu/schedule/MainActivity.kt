@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
         val notices = Store.notices(this)
         val group = Store.scheduleGroupName(this)
         val subgroup = Store.group(this)
+        val availableSubgroups = Store.availableSubgroups(this)
+        val focusedLesson = Store.focus(this)
         val lastUpdate = Store.status(this)
         val error = Store.error(this)
         var picker by remember { mutableIntStateOf(0) }
@@ -160,7 +162,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (selectedTab == 0) {
-                    item {
+                    if (availableSubgroups.isNotEmpty()) item {
                         Row(verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()) {
                             Text("Подгруппа", modifier = Modifier.weight(1f),
@@ -177,8 +179,7 @@ class MainActivity : ComponentActivity() {
                                 val number = relative.dayOfMonth
                                 if (active) Button(
                                     onClick = {
-                                        Store.resetDate(this@MainActivity)
-                                        Store.offset(this@MainActivity, daysFromToday)
+                                        Store.jump(this@MainActivity, daysFromToday)
                                         ScheduleWidget.renderAll(this@MainActivity)
                                         rerender++
                                     },
@@ -186,8 +187,7 @@ class MainActivity : ComponentActivity() {
                                 ) { Text("$caption $number") }
                                 else OutlinedButton(
                                     onClick = {
-                                        Store.resetDate(this@MainActivity)
-                                        Store.offset(this@MainActivity, daysFromToday)
+                                        Store.jump(this@MainActivity, daysFromToday)
                                         ScheduleWidget.renderAll(this@MainActivity)
                                         rerender++
                                     },
@@ -232,7 +232,11 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
-                    items(lessons) { lesson -> LessonCard(lesson, date) }
+                    items(lessons) { lesson ->
+                        LessonCard(lesson, date,
+                            LessonFocus.matches(focusedLesson, date, lesson),
+                            focusedLesson?.ongoing == true)
+                    }
                 } else {
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -319,7 +323,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("Подгруппа") },
                 text = {
                     LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                        items(listOf("Все", "А1", "А2", "А3", "А4", "А5", "А6", "А7", "А8", "А9", "А10", "Немецкий")) { name ->
+                        items(listOf("Все") + availableSubgroups) { name ->
                             Text(name, modifier = Modifier.fillMaxWidth().clickable {
                                 Store.setGroup(this@MainActivity, name)
                                 ScheduleWidget.renderAll(this@MainActivity)
@@ -333,10 +337,15 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun LessonCard(lesson: Lesson, date: LocalDate) {
+    private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean, ongoing: Boolean) {
         val data = SiteParser.details(lesson, date)
         val accent = Color(SiteParser.lessonColor(data.kind))
-        Surface(shape = RoundedCornerShape(21.dp), tonalElevation = 2.dp,
+        Surface(shape = RoundedCornerShape(21.dp),
+            tonalElevation = if (highlighted) 9.dp else 2.dp,
+            color = if (highlighted) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                else BorderStroke(1.dp, accent.copy(alpha = .34f)),
             modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Box(Modifier.fillMaxHeight().width(5.dp).background(accent))
@@ -358,6 +367,12 @@ class MainActivity : ComponentActivity() {
                             Text("● ЗАМЕНА", color = MaterialTheme.colorScheme.error,
                                 fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+                    }
+                    if (highlighted) {
+                        Spacer(Modifier.height(7.dp))
+                        Text(if (ongoing) "● ИДЁТ СЕЙЧАС" else "● СЛЕДУЮЩАЯ",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(data.subject, style = MaterialTheme.typography.titleSmall,

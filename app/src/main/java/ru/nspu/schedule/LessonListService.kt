@@ -14,11 +14,13 @@ class LessonListService : RemoteViewsService() {
     private class Factory(private val context: Context) : RemoteViewsFactory {
         private var lessons: List<Lesson> = emptyList()
         private var date = Store.date(context)
+        private var focus: FocusedLesson? = null
 
         override fun onCreate() = onDataSetChanged()
         override fun onDataSetChanged() {
             date = Store.date(context)
             lessons = Store.forDate(context, date)
+            focus = Store.focus(context)
         }
         override fun onDestroy() { lessons = emptyList() }
         override fun getCount(): Int = lessons.size
@@ -26,8 +28,13 @@ class LessonListService : RemoteViewsService() {
         override fun getViewAt(position: Int): RemoteViews? {
             val lesson = lessons.getOrNull(position) ?: return null
             val detail = SiteParser.details(lesson, date)
-            val color = SiteParser.lessonColor(detail.kind)
-            return RemoteViews(context.packageName, R.layout.lesson_item).apply {
+            val selected = LessonFocus.matches(focus, date, lesson)
+            val color = if (selected) 0xFFFFE083.toInt() else SiteParser.lessonColor(detail.kind)
+            return RemoteViews(context.packageName,
+                if (selected) R.layout.lesson_item_focus else R.layout.lesson_item).apply {
+                setTextViewText(R.id.lessonState,
+                    if (focus?.ongoing == true) "● ИДЁТ СЕЙЧАС" else "● СЛЕДУЮЩАЯ")
+                setViewVisibility(R.id.lessonState, if (selected) View.VISIBLE else View.GONE)
                 setTextViewText(R.id.lessonTimeStart, lesson.time.substringBefore('-'))
                 setTextViewText(R.id.lessonTimeEnd, lesson.time.substringAfter('-', ""))
                 setTextViewText(R.id.lessonSubject, detail.subject)

@@ -17,6 +17,7 @@ class ScheduleWidget : AppWidgetProvider() {
         Sync.schedule(context)
         if (Store.cached(context).isEmpty()) Sync.now(context)
         ids.forEach { render(context, manager, it) }
+        if (ids.isNotEmpty()) FocusClock.schedule(context)
     }
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
@@ -33,9 +34,9 @@ class ScheduleWidget : AppWidgetProvider() {
     companion object {
         fun renderAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
-            manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java)).forEach {
-                render(context, manager, it)
-            }
+            val ids = manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java))
+            ids.forEach { render(context, manager, it) }
+            if (ids.isNotEmpty()) FocusClock.schedule(context)
         }
         private fun action(context: Context, code: Int, cmd: String): PendingIntent {
             val intent = Intent(context, ScheduleWidget::class.java)

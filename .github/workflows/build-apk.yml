@@ -45,6 +45,8 @@ jobs:
             test -n "$SDKMANAGER"
             "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
           fi
+      - name: Run schedule regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK artifact

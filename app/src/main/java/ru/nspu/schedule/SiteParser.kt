@@ -94,6 +94,18 @@ object SiteParser {
         }
     }
 
+    /** Only codes actually mentioned next to a language lesson are selectable. */
+    fun languageOptions(lessons: List<Lesson>): List<String> {
+        val languageLessons = lessons.filter {
+            Regex("""(?i)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
+                .containsMatchIn(it.raw)
+        }
+        val groups = languageLessons.flatMap { subgroupPattern.findAll(it.raw).map { m -> "А" + m.groupValues[1] }.toList() }
+            .distinct().sortedBy { it.drop(1).toIntOrNull() ?: 999 }
+        val german = if (languageLessons.any { it.raw.contains("Немецкий язык", true) }) listOf("Немецкий") else emptyList()
+        return groups + german
+    }
+
     fun subgroupFits(raw: String, subgroup: String): Boolean {
         if (subgroup == "Все") return true
         if (raw.contains("Немецкий язык", true)) return subgroup == "Немецкий"
@@ -146,7 +158,7 @@ object SiteParser {
         val subject = l.raw.substringBefore(',').trim()
         val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim()
         val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
-        val room = Regex("""(?i)(?:а\.|ауд\.?)\s*([^,;()]+)""")
+        val room = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
             .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
         return LessonInfo(subject, teacher, room, lessonKind(l, date))
     }

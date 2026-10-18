@@ -17,7 +17,12 @@ data class SyncOutcome(val newNotices: List<Notice>, val newLessonChanges: Int)
 
 object Store {
     private fun prefs(c: Context) = c.getSharedPreferences("schedule", Context.MODE_PRIVATE)
-    fun group(c: Context) = prefs(c).getString("subgroup", "А7") ?: "А7"
+    fun availableSubgroups(c: Context): List<String> = SiteParser.languageOptions(cached(c))
+    fun group(c: Context): String {
+        val available = availableSubgroups(c)
+        val saved = prefs(c).getString("subgroup", "А7") ?: "А7"
+        return if (saved in available) saved else "Все"
+    }
     fun setGroup(c: Context, value: String) { prefs(c).edit().putString("subgroup", value).apply() }
     fun scheduleGroupId(c: Context) = prefs(c).getInt("group_id", 3328)
     fun scheduleGroupName(c: Context) = prefs(c).getString("group_name", "3.008.2.26 ИСиТвО") ?: "3.008.2.26"
@@ -33,11 +38,25 @@ object Store {
             .remove("updated").remove("error")
             .commit()
     }
-    fun date(c: Context): LocalDate = LocalDate.now(ZONE).plusDays(prefs(c).getInt("offset", 0).toLong())
+    fun focus(c: Context, now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): FocusedLesson? =
+        LessonFocus.choose(now) { day -> forDate(c, day) }
+
+    /** On the live view, move to the next teaching day when today's final lesson is over. */
+    fun date(c: Context): LocalDate {
+        val today = LocalDate.now(ZONE)
+        val stored = prefs(c).getInt("offset", 0)
+        if (stored != 0) return today.plusDays(stored.toLong())
+        return focus(c)?.date ?: today
+    }
+
+    fun jump(c: Context, daysFromToday: Int) {
+        prefs(c).edit().putInt("offset", daysFromToday.coerceIn(-7, 35)).apply()
+    }
     fun resetDate(c: Context) { prefs(c).edit().putInt("offset", 0).apply() }
     fun offset(c: Context, delta: Int) {
         val p = prefs(c)
-        p.edit().putInt("offset", (p.getInt("offset", 0) + delta).coerceIn(-7, 21)).apply()
+        val shown = ChronoUnit.DAYS.between(LocalDate.now(ZONE), date(c)).toInt()
+        p.edit().putInt("offset", (shown + delta).coerceIn(-7, 35)).apply()
     }
     fun week(date: LocalDate): Int = (ChronoUnit.DAYS.between(LocalDate.of(2026, 8, 31), date) / 7 + 1).toInt()
     fun cached(c: Context): List<Lesson> {

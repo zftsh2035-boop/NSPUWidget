@@ -12,6 +12,7 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/><action android:name="ru.nspu.schedule.NAV"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info"/>
         </receiver>
+        <receiver android:name=".FocusClockReceiver" android:exported="false"/>
         <service android:name=".LessonListService" android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS"/>
     </application>
