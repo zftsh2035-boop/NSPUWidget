@@ -56,22 +56,31 @@ class ScheduleWidget : AppWidgetProvider() {
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
             val options = manager.getAppWidgetOptions(widgetId)
             val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
-            val compact = heightDp in 1..209
+                .takeIf { it > 0 } ?: 300
+            val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 220)
+                .takeIf { it > 0 } ?: 220
+            val compact = heightDp < 210
+            val tiny = heightDp < 145 || widthDp < 185
             val medium = heightDp in 210..344
             if (compact) {
-                val v = RemoteViews(context.packageName, R.layout.widget_compact)
+                val layout = if (tiny) R.layout.widget_compact_tiny else R.layout.widget_compact
+                val v = RemoteViews(context.packageName, layout)
                 val focus = Store.focus(context)
-                v.setTextViewText(R.id.compactHeader, "НГПУ · " + Store.scheduleGroupCode(context))
+                v.setTextViewText(R.id.compactHeader,
+                    if (tiny) Store.scheduleGroupCode(context)
+                    else "НГПУ · " + Store.scheduleGroupCode(context))
                 if (focus != null) {
                     val d = SiteParser.details(focus.lesson, focus.date, Store.termStart(context))
                     v.setTextViewText(R.id.compactSubject, d.subject)
                     v.setTextViewText(R.id.compactTeacher, d.teacher)
                     v.setTextViewText(R.id.compactTime, if (focus.ongoing)
                         "До " + focus.lesson.time.substringAfter('-') else
-                        focus.date.format(DateTimeFormatter.ofPattern("EE dd.MM", Locale.forLanguageTag("ru-RU"))) +
+                        focus.date.format(DateTimeFormatter.ofPattern(
+                            if (tiny) "dd.MM" else "EE dd.MM", Locale.forLanguageTag("ru-RU"))) +
                             " · " + focus.lesson.time.substringBefore('-'))
                     v.setTextViewText(R.id.compactKind, SiteParser.shortKind(d.kind))
-                    v.setTextViewText(R.id.compactRoom, "ауд. " + d.room)
+                    v.setTextViewText(R.id.compactRoom,
+                        if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)
                     v.setTextColor(R.id.compactKind, SiteParser.lessonColor(d.kind))
                 } else {
                     v.setTextViewText(R.id.compactSubject, "Расписание пока не загружено")
@@ -83,8 +92,7 @@ class ScheduleWidget : AppWidgetProvider() {
                 val open = PendingIntent.getActivity(context, 10,
                     Intent(context, MainActivity::class.java),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                v.setOnClickPendingIntent(R.id.compactHeader, open)
-                v.setOnClickPendingIntent(R.id.compactSubject, open)
+                v.setOnClickPendingIntent(R.id.compactRoot, open)
                 manager.updateAppWidget(widgetId, v)
                 return
             }

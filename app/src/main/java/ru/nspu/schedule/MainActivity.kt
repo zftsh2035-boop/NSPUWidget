@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.content.SharedPreferences
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Duration
 import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -42,8 +45,35 @@ private val Violet = Color(0xFF8E53DA)
 private val Amber = Color(0xFFC07816)
 
 class MainActivity : ComponentActivity() {
+    private var scheduleRevision by mutableIntStateOf(0)
+    private var screenActive by mutableStateOf(false)
+    private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key in setOf("lessons", "notices", "updated", "error", "change_history",
+                "group_id", "subgroup", "offset", "term_start")) {
+            if (Looper.myLooper() == Looper.getMainLooper()) scheduleRevision++
+            else runOnUiThread { scheduleRevision++ }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        screenActive = true
+        scheduleRevision++
+    }
+
+    override fun onPause() {
+        screenActive = false
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        getSharedPreferences("schedule", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(scheduleListener)
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        getSharedPreferences("schedule", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(scheduleListener)
         Sync.schedule(this)
         if (Store.cached(this).isEmpty()) Sync.now(this)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -86,13 +116,21 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun AppScreen(currentTheme: String, changeTheme: (String) -> Unit) {
         var rerender by remember { mutableIntStateOf(0) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                delay(15000)
-                rerender += 1
+        // A whole-screen refresh happens only on actual data changes, navigation or
+        // class boundaries. The minute countdown is updated inside the focused card.
+        LaunchedEffect(screenActive) {
+            if (screenActive) {
+                while (true) {
+                    val at = LocalDateTime.now(ZONE)
+                    val next = LessonFocus.transitionAt(at, Store.focus(this@MainActivity, at))
+                    val wait = if (next != null) Duration.between(at, next).toMillis() + 1200L
+                        else 60L * 60L * 1000L
+                    delay(wait.coerceIn(1200L, 60L * 60L * 1000L))
+                    scheduleRevision++
+                }
             }
         }
-        val refreshTick = rerender // Read state to reflect background sync/cache changes.
+        val refreshTick = rerender + scheduleRevision // Observe data revision without 15-second global polling.
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
         var channel by remember { mutableStateOf(AppSettings.channel(this@MainActivity)) }
@@ -123,18 +161,17 @@ class MainActivity : ComponentActivity() {
             })
         }
         val listState = rememberLazyListState()
-        val date = Store.date(this)
-        val lessons = Store.forDate(this, date)
-        val timeline = DayTimeline.build(lessons)
-        val notices = Store.notices(this)
-        val group = Store.scheduleGroupName(this)
-        val subgroup = Store.group(this)
-        val availableSubgroups = Store.availableSubgroups(this)
-        val focusedLesson = Store.focus(this)
-        val now = LocalDateTime.now(ZONE)
-        val changes = Store.changeHistory(this)
-        val lastUpdate = Store.status(this)
-        val error = Store.error(this)
+        val date = remember(refreshTick) { Store.date(this) }
+        val lessons = remember(refreshTick, date) { Store.forDate(this, date) }
+        val timeline = remember(lessons) { DayTimeline.build(lessons) }
+        val notices = remember(refreshTick) { Store.notices(this) }
+        val group = remember(refreshTick) { Store.scheduleGroupName(this) }
+        val subgroup = remember(refreshTick) { Store.group(this) }
+        val availableSubgroups = remember(refreshTick) { Store.availableSubgroups(this) }
+        val focusedLesson = remember(refreshTick) { Store.focus(this) }
+        val changes = remember(refreshTick) { Store.changeHistory(this) }
+        val lastUpdate = remember(refreshTick) { Store.status(this) }
+        val error = remember(refreshTick) { Store.error(this) }
         var picker by remember { mutableIntStateOf(0) }
         var working by remember { mutableStateOf(false) }
         var pickerError by remember { mutableStateOf("") }
@@ -337,7 +374,7 @@ class MainActivity : ComponentActivity() {
                         when (row) {
                             is DayRow.LessonRow -> LessonCard(row.lesson, date,
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
-                                focusedLesson?.ongoing == true, now, animateHighlight)
+                                focusedLesson?.ongoing == true, animateHighlight, screenActive)
                             is DayRow.WindowRow -> GapCard(row)
                         }
                     }
@@ -659,13 +696,27 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean,
-        ongoing: Boolean, now: LocalDateTime, animateHighlight: Boolean) {
-        val data = SiteParser.details(lesson, date, Store.termStart(this))
+        ongoing: Boolean, animateHighlight: Boolean, active: Boolean) {
+        // Keep minute updates local to this one visible card instead of recomposing the
+        // entire schedule every 15 seconds.
+        var minuteTick by remember(lesson.time, date) { mutableIntStateOf(0) }
+        LaunchedEffect(highlighted, active, lesson.time, date) {
+            if (highlighted && active) while (true) {
+                val millis = System.currentTimeMillis()
+                delay(60_000L - (millis % 60_000L) + 150L)
+                minuteTick++
+            }
+        }
+        val tick = minuteTick
+        val now = remember(tick, highlighted, active) { LocalDateTime.now(ZONE) }
+        val data = remember(lesson, date) {
+            SiteParser.details(lesson, date, Store.termStart(this@MainActivity))
+        }
         val accent = Color(SiteParser.lessonColor(data.kind))
         val timing = if (highlighted) FocusDisplay.of(now, FocusedLesson(date, lesson, ongoing)) else null
         // Only the focused card pulses. Compose stops driving frames when the activity
         // is not visible; the Android home-screen widget deliberately remains static.
-        val pulse = if (highlighted && animateHighlight && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        val pulse = if (highlighted && active && animateHighlight && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             val transition = rememberInfiniteTransition(label = "focused_lesson_pulse")
             val fraction by transition.animateFloat(
                 initialValue = 0f,

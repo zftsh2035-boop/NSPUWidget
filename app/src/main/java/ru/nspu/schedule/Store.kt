@@ -18,7 +18,20 @@ data class SyncOutcome(val newNotices: List<Notice>, val newLessonChanges: Int,
 
 object Store {
     private fun prefs(c: Context) = c.getSharedPreferences("schedule", Context.MODE_PRIVATE)
-    fun availableSubgroups(c: Context): List<String> = SiteParser.languageOptions(cached(c))
+    // Cached snapshots prevent repeated JSON parsing when Compose or the widget queries data.
+    // The raw JSON itself is the invalidation token; edits and group changes are automatic.
+    private val cacheLock = Any()
+    private var lessonRaw: String? = null
+    private var lessonSnapshot: List<Lesson> = emptyList()
+    private var languageSnapshot: List<String> = emptyList()
+    private var noticeRaw: String? = null
+    private var noticeSnapshot: List<Notice> = emptyList()
+    private var historyRaw: String? = null
+    private var historySnapshot: List<String> = emptyList()
+    fun availableSubgroups(c: Context): List<String> {
+        cached(c) // Populates both the parsed lessons and derived subgroup list.
+        return synchronized(cacheLock) { languageSnapshot }
+    }
     fun group(c: Context): String {
         val available = availableSubgroups(c)
         val saved = prefs(c).getString("subgroup", "А7") ?: "А7"
@@ -67,21 +80,44 @@ object Store {
     fun week(c: Context, date: LocalDate): Int = SiteParser.academicWeek(date, termStart(c))
 
     fun changeHistory(c: Context): List<String> {
-        val array = JSONArray(prefs(c).getString("change_history", "[]"))
-        return (0 until array.length()).map { array.getString(it) }
+        val raw = prefs(c).getString("change_history", "[]") ?: "[]"
+        return synchronized(cacheLock) {
+            if (raw != historyRaw) {
+                val array = JSONArray(raw)
+                historySnapshot = (0 until array.length()).map { array.getString(it) }
+                historyRaw = raw
+            }
+            historySnapshot
+        }
     }
     fun cached(c: Context): List<Lesson> {
-        val a = JSONArray(prefs(c).getString("lessons", "[]"))
-        return (0 until a.length()).map { i ->
-            val o = a.getJSONObject(i)
-            Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"), o.optBoolean("changed"))
+        val raw = prefs(c).getString("lessons", "[]") ?: "[]"
+        return synchronized(cacheLock) {
+            if (raw != lessonRaw) {
+                val a = JSONArray(raw)
+                val parsed = (0 until a.length()).map { i ->
+                    val o = a.getJSONObject(i)
+                    Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"), o.optBoolean("changed"))
+                }
+                lessonSnapshot = parsed
+                languageSnapshot = SiteParser.languageOptions(parsed)
+                lessonRaw = raw
+            }
+            lessonSnapshot
         }
     }
     fun notices(c: Context): List<Notice> {
-        val a = JSONArray(prefs(c).getString("notices", "[]"))
-        return (0 until a.length()).map { i ->
-            val o = a.getJSONObject(i)
-            Notice(o.getString("id"), o.getString("text"), o.optString("published").ifBlank { null }, o.optBoolean("isNew"))
+        val raw = prefs(c).getString("notices", "[]") ?: "[]"
+        return synchronized(cacheLock) {
+            if (raw != noticeRaw) {
+                val a = JSONArray(raw)
+                noticeSnapshot = (0 until a.length()).map { i ->
+                    val o = a.getJSONObject(i)
+                    Notice(o.getString("id"), o.getString("text"), o.optString("published").ifBlank { null }, o.optBoolean("isNew"))
+                }
+                noticeRaw = raw
+            }
+            noticeSnapshot
         }
     }
     /** Hiding affects only this phone's home-screen widget, never the official site or app. */
@@ -103,7 +139,9 @@ object Store {
     fun forDate(c: Context, date: LocalDate): List<Lesson> {
         val day = date.dayOfWeek.value - 1
         if (day !in 0..5) return emptyList()
-        return cached(c).filter { it.day == day && SiteParser.applicable(it, date, termStart(c)) && SiteParser.subgroupFits(it.raw, group(c)) }
+        val start = termStart(c)
+        val languageGroup = group(c)
+        return cached(c).filter { it.day == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup) }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
     }
     fun markAllRead(c: Context) {
