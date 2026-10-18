@@ -68,4 +68,13 @@ class ScheduleRegressionTest {
         assertEquals("зач.", SiteParser.shortKind("ЗАЧЁТ"))
         assertEquals("экз.", SiteParser.shortKind("ЭКЗАМЕН"))
     }
+    @Test fun swipeDirectionAndThreshold() {
+        assertEquals(1, DaySwipe.direction(-125f, 64f))
+        assertEquals(-1, DaySwipe.direction(125f, 64f))
+        assertEquals(0, DaySwipe.direction(-63f, 64f))
+        assertEquals(0, DaySwipe.direction(63f, 64f))
+        assertEquals(0, DaySwipe.direction(0f, 64f))
+        assertEquals(0, DaySwipe.direction(Float.NaN, 64f))
+    }
+
 }

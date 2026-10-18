@@ -9,6 +9,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.lerp
+import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -60,7 +66,7 @@ class MainActivity : ComponentActivity() {
         var rerender by remember { mutableIntStateOf(0) }
         LaunchedEffect(Unit) {
             while (true) {
-                delay(3200)
+                delay(15000)
                 rerender += 1
             }
         }
@@ -132,8 +138,29 @@ class MainActivity : ComponentActivity() {
                 }
             }
         ) { insets ->
+            // A horizontal swipe navigates days without interfering with normal vertical scrolling.
+            val daySwipeModifier = if (selectedTab == 0) Modifier.pointerInput(selectedTab) {
+                var draggedPx = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { draggedPx = 0f },
+                    onHorizontalDrag = { change, amount ->
+                        draggedPx += amount
+                        change.consume()
+                    },
+                    onDragCancel = { draggedPx = 0f },
+                    onDragEnd = {
+                        val direction = DaySwipe.direction(draggedPx, 64.dp.toPx())
+                        if (direction != 0) {
+                            Store.offset(this@MainActivity, direction)
+                            ScheduleWidget.renderAll(this@MainActivity)
+                            rerender++
+                        }
+                        draggedPx = 0f
+                    }
+                )
+            } else Modifier
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(insets),
+                modifier = Modifier.fillMaxSize().padding(insets).then(daySwipeModifier),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -172,8 +199,10 @@ class MainActivity : ComponentActivity() {
                     }
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items((-1..5).toList()) { daysFromToday ->
-                                val relative = LocalDate.now(ZONE).plusDays(daysFromToday.toLong())
+                            items((-2..4).toList()) { daysFromSelected ->
+                                // Keep the quick day strip centered around the selected day, even after many swipes.
+                                val relative = date.plusDays(daysFromSelected.toLong())
+                                val daysFromToday = ChronoUnit.DAYS.between(LocalDate.now(ZONE), relative).toInt()
                                 val active = relative == date
                                 val caption = relative.format(DateTimeFormatter.ofPattern("EE", Locale.forLanguageTag("ru-RU")))
                                 val number = relative.dayOfMonth
@@ -340,10 +369,29 @@ class MainActivity : ComponentActivity() {
     private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean, ongoing: Boolean) {
         val data = SiteParser.details(lesson, date)
         val accent = Color(SiteParser.lessonColor(data.kind))
+        // Only the focused card pulses. Compose stops driving frames when the activity
+        // is not visible; the Android home-screen widget deliberately remains static.
+        val pulse = if (highlighted && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            val transition = rememberInfiniteTransition(label = "focused_lesson_pulse")
+            val fraction by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "focus_brightness"
+            )
+            fraction
+        } else 0.7f
+        val focusFill = lerp(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.primary,
+            0.05f + 0.19f * pulse
+        )
         Surface(shape = RoundedCornerShape(21.dp),
             tonalElevation = if (highlighted) 9.dp else 2.dp,
-            color = if (highlighted) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
+            color = if (highlighted) focusFill else MaterialTheme.colorScheme.surface,
             border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                 else BorderStroke(1.dp, accent.copy(alpha = .34f)),
             modifier = Modifier.fillMaxWidth()) {
@@ -370,9 +418,15 @@ class MainActivity : ComponentActivity() {
                     }
                     if (highlighted) {
                         Spacer(Modifier.height(7.dp))
-                        Text(if (ongoing) "● ИДЁТ СЕЙЧАС" else "● СЛЕДУЮЩАЯ",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("●", color = MaterialTheme.colorScheme.primary.copy(
+                                alpha = 0.22f + 0.78f * pulse
+                            ), fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Spacer(Modifier.width(5.dp))
+                            Text(if (ongoing) "ИДЁТ СЕЙЧАС" else "СЛЕДУЮЩАЯ",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(data.subject, style = MaterialTheme.typography.titleSmall,
