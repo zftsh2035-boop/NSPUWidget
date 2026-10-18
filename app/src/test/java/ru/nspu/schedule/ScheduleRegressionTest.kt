@@ -117,4 +117,13 @@ class ScheduleRegressionTest {
             LocalDate.of(2027,2,1)))
     }
 
+    @Test fun githubReleaseVersionOrdering() {
+        assertTrue(UpdateChecker.newer("v1.8", "1.7"))
+        assertTrue(UpdateChecker.newer("1.10", "1.9"))
+        assertTrue(UpdateChecker.newer("1.8.1", "1.8"))
+        assertFalse(UpdateChecker.newer("1.8", "1.8"))
+        assertFalse(UpdateChecker.newer("v1.7", "1.8"))
+        assertFalse(UpdateChecker.newer("bad-version", "1.7"))
+    }
+
 }

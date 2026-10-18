@@ -73,6 +73,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         val refreshTick = rerender // Read state to reflect background sync/cache changes.
+        var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+        var showUpdateDialog by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            UpdateChecker.check(this@MainActivity) { update ->
+                availableUpdate = update
+                if (update != null && !UpdateChecker.previouslyPrompted(this@MainActivity, update.version)) {
+                    UpdateChecker.markPrompted(this@MainActivity, update.version)
+                    showUpdateDialog = true
+                }
+            }
+        }
         var selectedTab by remember {
             mutableIntStateOf(when {
                 intent.getBooleanExtra("show_changes", false) -> 2
@@ -208,6 +219,37 @@ class MainActivity : ComponentActivity() {
                                 }
                                 FilledTonalButton(onClick = { loadInstitutes() }) { Text("Сменить") }
                             }
+                        }
+                    }
+                }
+
+                // A small passive GitHub tile remains available after a dismissed modal.
+                item {
+                    OutlinedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            val target = availableUpdate?.releaseUrl ?:
+                                "https://github.com/zftsh2035-boop/NSPUWidget/releases"
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                        },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("↗", fontSize = 23.sp, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(if (availableUpdate == null) "GitHub · Релизы"
+                                    else "Доступно обновление " + availableUpdate!!.version,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text(if (availableUpdate == null) "Открыть страницу проекта"
+                                    else "Открыть выпуск на GitHub",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("›", fontSize = 26.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -351,6 +393,30 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+
+        if (showUpdateDialog && availableUpdate != null) {
+            val update = availableUpdate!!
+            AlertDialog(
+                onDismissRequest = { showUpdateDialog = false },
+                title = { Text("Доступно обновление") },
+                text = {
+                    Text("Версия " + update.version +
+                        " уже опубликована в GitHub Releases. Установленная: " +
+                        UpdateChecker.installedVersion(this@MainActivity) +
+                        ". Если не хочешь устанавливать сейчас, повторно предлагать эту версию не будем.")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showUpdateDialog = false
+                        startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse(update.apkUrl.ifBlank { update.releaseUrl })))
+                    }) { Text("Скачать") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUpdateDialog = false }) { Text("Не сейчас") }
+                }
+            )
         }
 
         if (picker != 0) {
