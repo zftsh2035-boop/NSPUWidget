@@ -24,6 +24,7 @@ object FocusDisplay {
                 val hours = minutes % (24 * 60) / 60
                 "$days д $hours ч"
             }
+            minutes >= 60 && minutes % 60 == 0L -> "${minutes / 60} ч"
             minutes >= 60 -> "${minutes / 60} ч ${minutes % 60} мин"
             else -> "$minutes мин"
         }

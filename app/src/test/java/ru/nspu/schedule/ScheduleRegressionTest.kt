@@ -86,7 +86,7 @@ class ScheduleRegressionTest {
         assertEquals(0f, pending.progress, 0.001f)
         val live = FocusDisplay.of(LocalDateTime.of(2026,10,19,9,0),
             FocusedLesson(day,item,true))!!
-        assertEquals("Осталось 60 мин", live.label)
+        assertEquals("Осталось 1 ч", live.label)
         assertEquals(1f/3f, live.progress, 0.02f)
         val tomorrow = FocusDisplay.of(LocalDateTime.of(2026,10,18,17,0),
             FocusedLesson(day,item,false))!!
