@@ -63,7 +63,14 @@ class ScheduleWidget : AppWidgetProvider() {
             } else v.setViewVisibility(R.id.noticeBox, View.GONE)
 
             val lessons = Store.forDate(context, date)
-            v.setTextViewText(R.id.lessonCount, lessons.size.toString() + " занятий · список прокручивается")
+            val n = lessons.size
+            val pairWord = when {
+                n % 100 in 11..14 -> "пар"
+                n % 10 == 1 -> "пара"
+                n % 10 in 2..4 -> "пары"
+                else -> "пар"
+            }
+            v.setTextViewText(R.id.lessonCount, "$n $pairWord")
             val service = Intent(context, LessonListService::class.java)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                 .setData(Uri.parse("nspuwidget://lessons/" + widgetId))
