@@ -2,8 +2,8 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "ru.nspu.schedule"
     compileSdk = 35
-    defaultConfig { applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35; versionCode = 11; versionName = "1.9" }
-    buildFeatures { compose = true }
+    defaultConfig { applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35; versionCode = 12; versionName = "2.0"; buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: "unknown"}\"") }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }

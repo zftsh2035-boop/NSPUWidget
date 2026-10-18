@@ -51,20 +51,40 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
         setContent {
-            val dark = isSystemInDarkTheme()
-            val colors = when {
+            var currentTheme by remember { mutableStateOf(AppSettings.theme(this@MainActivity)) }
+            val systemDark = isSystemInDarkTheme()
+            val dark = when (currentTheme) {
+                AppSettings.LIGHT -> false
+                AppSettings.DARK, AppSettings.AMOLED -> true
+                else -> systemDark
+            }
+            val base = when {
                 Build.VERSION.SDK_INT >= 31 && dark -> dynamicDarkColorScheme(this)
                 Build.VERSION.SDK_INT >= 31 -> dynamicLightColorScheme(this)
                 dark -> darkColorScheme(primary = Color(0xFF9CC5FF), secondary = Color(0xFF5DE0C9))
                 else -> lightColorScheme(primary = Blue, secondary = Sea, background = Color(0xFFF6F8FE))
             }
-            MaterialTheme(colorScheme = colors) { AppScreen() }
+            val colors = if (currentTheme == AppSettings.AMOLED) base.copy(
+                background = Color.Black, surface = Color.Black,
+                surfaceContainerLowest = Color.Black,
+                surfaceContainerLow = Color(0xFF0C0C0C),
+                surfaceContainer = Color(0xFF121212),
+                surfaceContainerHigh = Color(0xFF191919),
+                surfaceContainerHighest = Color(0xFF222222),
+                surfaceDim = Color.Black, surfaceBright = Color(0xFF202020)
+            ) else base
+            MaterialTheme(colorScheme = colors) {
+                AppScreen(currentTheme) { value ->
+                    AppSettings.setTheme(this@MainActivity, value)
+                    currentTheme = value
+                }
+            }
         }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun AppScreen() {
+    private fun AppScreen(currentTheme: String, changeTheme: (String) -> Unit) {
         var rerender by remember { mutableIntStateOf(0) }
         LaunchedEffect(Unit) {
             while (true) {
@@ -75,11 +95,22 @@ class MainActivity : ComponentActivity() {
         val refreshTick = rerender // Read state to reflect background sync/cache changes.
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            UpdateChecker.check(this@MainActivity) { update ->
+        var channel by remember { mutableStateOf(AppSettings.channel(this@MainActivity)) }
+        var animateHighlight by remember { mutableStateOf(AppSettings.animateHighlight(this@MainActivity)) }
+        var autoScroll by remember { mutableStateOf(AppSettings.autoScroll(this@MainActivity)) }
+        var updatePrompts by remember { mutableStateOf(AppSettings.updatePrompts(this@MainActivity)) }
+        var showAbout by remember { mutableStateOf(false) }
+        var checkCounter by remember { mutableIntStateOf(0) }
+        var manualCheck by remember { mutableStateOf(false) }
+        LaunchedEffect(channel, checkCounter) {
+            val force = manualCheck
+            manualCheck = false
+            availableUpdate = null
+            UpdateChecker.check(this@MainActivity, force = force) { update ->
                 availableUpdate = update
-                if (update != null && !UpdateChecker.previouslyPrompted(this@MainActivity, update.version)) {
-                    UpdateChecker.markPrompted(this@MainActivity, update.version)
+                if (update != null && updatePrompts &&
+                    !UpdateChecker.previouslyPrompted(this@MainActivity, update.key)) {
+                    UpdateChecker.markPrompted(this@MainActivity, update.key)
                     showUpdateDialog = true
                 }
             }
@@ -143,8 +174,8 @@ class MainActivity : ComponentActivity() {
             row is DayRow.LessonRow && LessonFocus.matches(focusedLesson, date, row.lesson)
         }
         LaunchedEffect(selectedTab, date, focusIndex, group) {
-            if (selectedTab == 0 && focusIndex >= 0) {
-                val prefix = 2 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+            if (selectedTab == 0 && autoScroll && focusIndex >= 0) {
+                val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
                     1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
                 listState.animateScrollToItem(prefix + focusIndex)
             } else if (selectedTab != 0) listState.scrollToItem(0)
@@ -172,6 +203,9 @@ class MainActivity : ComponentActivity() {
                     NavigationBarItem(selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
                         icon = { Text("↺", fontSize = 22.sp) }, label = { Text("Изменения") })
+                    NavigationBarItem(selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
+                        icon = { Text("⚙", fontSize = 22.sp) }, label = { Text("Настройки") })
                 }
             }
         ) { insets ->
@@ -202,7 +236,7 @@ class MainActivity : ComponentActivity() {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
+                if (selectedTab == 0) item {
                     Surface(shape = RoundedCornerShape(24.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.fillMaxWidth()) {
@@ -222,37 +256,6 @@ class MainActivity : ComponentActivity() {
                                 }
                                 FilledTonalButton(onClick = { loadInstitutes() }) { Text("Сменить") }
                             }
-                        }
-                    }
-                }
-
-                // A small passive GitHub tile remains available after a dismissed modal.
-                item {
-                    OutlinedCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            val target = availableUpdate?.releaseUrl ?:
-                                "https://github.com/zftsh2035-boop/NSPUWidget/releases"
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                        },
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("↗", fontSize = 23.sp, color = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(if (availableUpdate == null) "GitHub · Релизы"
-                                    else "Доступно обновление " + availableUpdate!!.version,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold)
-                                Text(if (availableUpdate == null) "Открыть страницу проекта"
-                                    else "Открыть выпуск на GitHub",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("›", fontSize = 26.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -334,7 +337,7 @@ class MainActivity : ComponentActivity() {
                         when (row) {
                             is DayRow.LessonRow -> LessonCard(row.lesson, date,
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
-                                focusedLesson?.ongoing == true, now)
+                                focusedLesson?.ongoing == true, now, animateHighlight)
                             is DayRow.WindowRow -> GapCard(row)
                         }
                     }
@@ -372,7 +375,7 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this@MainActivity))))
                         }) { Text("Открыть оригинал на сайте НГПУ ↗") }
                     }
-                } else {
+                } else if (selectedTab == 2) {
                     item {
                         Text("История изменений", style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold)
@@ -389,8 +392,113 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.bodyMedium)
                         }
                     }
+                } else {
+                    item {
+                        Text("Настройки", style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold)
+                    }
+                    item {
+                        SettingsPanel(title = "Канал обновлений") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = channel == AppSettings.STABLE,
+                                    onClick = {
+                                        channel = AppSettings.STABLE
+                                        AppSettings.setChannel(this@MainActivity, channel)
+                                        checkCounter++
+                                    }, label = { Text("Stable") })
+                                FilterChip(selected = channel == AppSettings.DEV,
+                                    onClick = {
+                                        channel = AppSettings.DEV
+                                        AppSettings.setChannel(this@MainActivity, channel)
+                                        checkCounter++
+                                    }, label = { Text("Dev") })
+                            }
+                            Text(if (channel == AppSettings.STABLE)
+                                "Проверенные выпуски из GitHub Releases."
+                                else "Тестовые сборки из GitHub Actions. Для загрузки APK может понадобиться вход в GitHub.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val update = availableUpdate
+                            OutlinedButton(onClick = {
+                                val destination = update?.releaseUrl ?: if (channel == AppSettings.STABLE)
+                                    UpdateChecker.RELEASES else UpdateChecker.DEV_BUILDS
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(destination)))
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (update != null) "Доступна версия " + update.version + " ↗"
+                                    else if (channel == AppSettings.STABLE) "Релизы GitHub ↗"
+                                    else "Сборки dev на GitHub ↗")
+                            }
+                            TextButton(onClick = {
+                                manualCheck = true
+                                checkCounter++
+                            }) { Text("Проверить обновления") }
+                            SettingsToggle("Предлагать новые версии", updatePrompts) {
+                                updatePrompts = it
+                                AppSettings.setUpdatePrompts(this@MainActivity, it)
+                                if (!it) showUpdateDialog = false
+                            }
+                        }
+                    }
+                    item {
+                        SettingsPanel(title = "Тема приложения") {
+                            val themes = listOf(
+                                AppSettings.SYSTEM to "Системная",
+                                AppSettings.LIGHT to "Светлая",
+                                AppSettings.DARK to "Тёмная",
+                                AppSettings.AMOLED to "AMOLED"
+                            )
+                            themes.forEach { (value, title) ->
+                                Row(Modifier.fillMaxWidth().clickable { changeTheme(value) }
+                                    .padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = currentTheme == value,
+                                        onClick = { changeTheme(value) })
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(title, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                            Text("Системная тема следует Android; Dynamic Color используется на Android 12+. AMOLED сохраняет системный акцент, но делает фон полностью чёрным.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    item {
+                        SettingsPanel(title = "Расписание") {
+                            SettingsToggle("Плавная пульсация выбранной пары", animateHighlight) {
+                                animateHighlight = it
+                                AppSettings.setAnimateHighlight(this@MainActivity, it)
+                            }
+                            SettingsToggle("Автопрокрутка к ближайшей паре", autoScroll) {
+                                autoScroll = it
+                                AppSettings.setAutoScroll(this@MainActivity, it)
+                            }
+                            Text("Виджет обновляется только при смене пары, без постоянной анимации.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    item {
+                        ElevatedCard(modifier = Modifier.fillMaxWidth(),
+                            onClick = { showAbout = true }) {
+                            Row(Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text("ⓘ", fontSize = 24.sp,
+                                    color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("О приложении",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold)
+                                    Text("Версия " + UpdateChecker.installedVersion(this@MainActivity) +
+                                        " · GitHub · исходный код",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("›", fontSize = 24.sp)
+                            }
+                        }
+                    }
                 }
-                item {
+                if (selectedTab != 3) item {
                     Text(
                         if (error.isNotBlank()) "Нет связи · сохранённая версия ($error)"
                         else "Проверено: $lastUpdate · автообновление примерно раз в 3 часа",
@@ -401,23 +509,49 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        if (showAbout) {
+            AlertDialog(
+                onDismissRequest = { showAbout = false },
+                title = { Text("О приложении") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("NSPUWidget · версия " + UpdateChecker.installedVersion(this@MainActivity))
+                        Text("Неофициальное приложение расписания НГПУ. Данные берутся с сайта университета.")
+                        Text("Исходный код, история изменений и релизы доступны на GitHub.")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showAbout = false
+                        startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/zftsh2035-boop/NSPUWidget")))
+                    }) { Text("Открыть GitHub ↗") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAbout = false }) { Text("Закрыть") }
+                }
+            )
+        }
         if (showUpdateDialog && availableUpdate != null) {
             val update = availableUpdate!!
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
                 title = { Text("Доступно обновление") },
                 text = {
-                    Text("Версия " + update.version +
-                        " уже опубликована в GitHub Releases. Установленная: " +
-                        UpdateChecker.installedVersion(this@MainActivity) +
-                        ". Если не хочешь устанавливать сейчас, повторно предлагать эту версию не будем.")
+                    Text(if (update.channel == AppSettings.DEV)
+                        "Новая тестовая сборка " + update.version +
+                            " доступна в GitHub Actions. На странице сборки открой Artifacts; может потребоваться вход в GitHub. Эту сборку повторно предлагать не будем."
+                        else "Версия " + update.version +
+                            " доступна в GitHub Releases. Установленная: " +
+                            UpdateChecker.installedVersion(this@MainActivity) +
+                            ". Если не хочешь устанавливать сейчас, повторно предлагать эту версию не будем.")
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         showUpdateDialog = false
                         startActivity(Intent(Intent.ACTION_VIEW,
                             Uri.parse(update.apkUrl.ifBlank { update.releaseUrl })))
-                    }) { Text("Скачать") }
+                    }) { Text(if (update.channel == AppSettings.DEV) "Открыть сборку" else "Скачать") }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateDialog = false }) { Text("Не сейчас") }
@@ -479,6 +613,26 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun SettingsPanel(title: String, content: @Composable ColumnScope.() -> Unit) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                content()
+            }
+        }
+    }
+
+    @Composable
+    private fun SettingsToggle(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = checked, onCheckedChange = onChange)
+        }
+    }
+
+    @Composable
     private fun GapCard(gap: DayRow.WindowRow) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -505,13 +659,13 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean,
-        ongoing: Boolean, now: LocalDateTime) {
+        ongoing: Boolean, now: LocalDateTime, animateHighlight: Boolean) {
         val data = SiteParser.details(lesson, date, Store.termStart(this))
         val accent = Color(SiteParser.lessonColor(data.kind))
         val timing = if (highlighted) FocusDisplay.of(now, FocusedLesson(date, lesson, ongoing)) else null
         // Only the focused card pulses. Compose stops driving frames when the activity
         // is not visible; the Android home-screen widget deliberately remains static.
-        val pulse = if (highlighted && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        val pulse = if (highlighted && animateHighlight && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             val transition = rememberInfiniteTransition(label = "focused_lesson_pulse")
             val fraction by transition.animateFloat(
                 initialValue = 0f,
