@@ -54,6 +54,14 @@ jobs:
         env:
           NSPU_LIVE: 'true'
         run: gradle --no-daemon :app:testDebugUnitTest --tests ru.nspu.schedule.PublicTimetableLiveTest --rerun-tasks
+      - name: Measure NSPU public page response time (dev)
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          for i in 1 2; do
+            curl -sS -L --max-time 17 -o /dev/null \
+              -w "Official NSPU teacher request $i: HTTP %{http_code}; TTFB %{time_starttransfer}s; total %{time_total}s; size %{size_download} B\n" \
+              'https://schedule.nspu.ru/teacher_shedule.php?id=452&nextweek=0' || true
+          done
       - name: Assemble R8 optimized APKs
         env:
           NSPU_KEYSTORE_PASSWORD: ${{ secrets.NSPU_KEYSTORE_PASSWORD }}

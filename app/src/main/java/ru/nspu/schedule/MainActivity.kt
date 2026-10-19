@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.Duration
@@ -128,13 +130,15 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = colors) {
                 val top = pageStack.lastOrNull()
                 if (top == null) {
-                    AppScreen(currentTheme,
-                        changeTheme = { value ->
-                            AppSettings.setTheme(this@MainActivity, value)
-                            currentTheme = value
-                        },
-                        onOpenSchedule = { page -> pageStack.add(page) }
-                    )
+                    pageStateHolder.SaveableStateProvider("home") {
+                        AppScreen(currentTheme,
+                            changeTheme = { value ->
+                                AppSettings.setTheme(this@MainActivity, value)
+                                currentTheme = value
+                            },
+                            onOpenSchedule = { page -> pageStack.add(page) }
+                        )
+                    }
                 } else {
                     pageStateHolder.SaveableStateProvider(top.url) {
                         NativePublicSchedule(
@@ -207,6 +211,25 @@ class MainActivity : ComponentActivity() {
         val subgroup = remember(refreshTick) { Store.group(this) }
         val availableSubgroups = remember(refreshTick) { Store.availableSubgroups(this) }
         val focusedLesson = remember(refreshTick) { Store.focus(this) }
+        // Prewarm only the next teacher's public timetable while a student is
+        // already reading their group schedule. One bounded request, not a crawl
+        // of all university teachers, and never on the Compose main thread.
+        LaunchedEffect(date, group, screenActive, selectedTab) {
+            if (!screenActive || selectedTab != 0) return@LaunchedEffect
+            delay(1700)
+            val page = withContext(Dispatchers.Default) {
+                lessons.asSequence().mapNotNull { lesson ->
+                    val name = SiteParser.details(lesson, date, Store.termStart(this@MainActivity)).teacher
+                    Store.teacherScheduleUrl(this@MainActivity, name)
+                        ?.let { OfficialSchedulePage.fromUrl(it, name) }
+                }.firstOrNull()
+            } ?: return@LaunchedEffect
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    PublicTimetableRepository.load(this@MainActivity.applicationContext, page, 0)
+                }
+            }
+        }
         val changes = remember(refreshTick) { Store.changeHistory(this) }
         val lastUpdate = remember(refreshTick) { Store.status(this) }
         val error = remember(refreshTick) { Store.error(this) }
