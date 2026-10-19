@@ -273,7 +273,7 @@ internal data class PublicLessonPresentation(
     val kindLabel: String
 )
 
-private val weekNotePattern = Regex("""\([^)]*нед\.?[^)]*\)""", RegexOption.IGNORE_CASE)
+private val weekNotePattern = Regex("""(?:\([^)]*нед\.?[^)]*\)|\((?:л\.з\.|п\.з\.|л\.|экз\.|зач\.|практика|лекция)\)\s*:\s*[\d,\s–-]+\s*нед\.?)""", RegexOption.IGNORE_CASE)
 
 internal fun PublicClass.present(): PublicLessonPresentation {
     val groups = links.asSequence().filter { it.type == "group" }
