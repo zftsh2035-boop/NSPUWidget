@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -122,27 +123,35 @@ class MainActivity : ComponentActivity() {
                 surfaceContainerHighest = Color(0xFF222222),
                 surfaceDim = Color.Black, surfaceBright = Color(0xFF202020)
             ) else base
+            val pageStack = remember { mutableStateListOf<OfficialSchedulePage>() }
+            val pageStateHolder = rememberSaveableStateHolder()
             MaterialTheme(colorScheme = colors) {
-                AppScreen(currentTheme) { value ->
-                    AppSettings.setTheme(this@MainActivity, value)
-                    currentTheme = value
+                val top = pageStack.lastOrNull()
+                if (top == null) {
+                    AppScreen(currentTheme,
+                        changeTheme = { value ->
+                            AppSettings.setTheme(this@MainActivity, value)
+                            currentTheme = value
+                        },
+                        onOpenSchedule = { page -> pageStack.add(page) }
+                    )
+                } else {
+                    pageStateHolder.SaveableStateProvider(top.url) {
+                        NativePublicSchedule(
+                            page = top,
+                            onBack = { if (pageStack.isNotEmpty()) pageStack.removeAt(pageStack.lastIndex) },
+                            onOpenReference = { newPage -> pageStack.add(newPage) }
+                        )
+                    }
                 }
             }
         }
     }
 
-    private fun openOfficialSchedule(url: String) {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure {
-            android.widget.Toast.makeText(this, "Не удалось открыть сайт НГПУ",
-                android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun AppScreen(currentTheme: String, changeTheme: (String) -> Unit) {
+    private fun AppScreen(currentTheme: String, changeTheme: (String) -> Unit,
+        onOpenSchedule: (OfficialSchedulePage) -> Unit) {
         var rerender by remember { mutableIntStateOf(0) }
         // A whole-screen refresh happens only on actual data changes, navigation or
         // class boundaries. The minute countdown is updated inside the focused card.
@@ -403,7 +412,7 @@ class MainActivity : ComponentActivity() {
                         when (row) {
                             is DayRow.LessonRow -> LessonCard(row.lesson, date,
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
-                                focusedLesson?.ongoing == true, animateHighlight, screenActive)
+                                focusedLesson?.ongoing == true, animateHighlight, screenActive, onOpenSchedule)
                             is DayRow.WindowRow -> GapCard(row)
                         }
                     }
@@ -773,7 +782,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean,
-        ongoing: Boolean, animateHighlight: Boolean, active: Boolean) {
+        ongoing: Boolean, animateHighlight: Boolean, active: Boolean,
+        onOpenSchedule: (OfficialSchedulePage) -> Unit) {
         // Keep minute updates local to this one visible card instead of recomposing the
         // entire schedule every 15 seconds.
         var minuteTick by remember(lesson.time, date) { mutableIntStateOf(0) }
@@ -871,14 +881,16 @@ class MainActivity : ComponentActivity() {
                         color = if (teacherUrl != null) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = if (teacherUrl != null) Modifier.clickable {
-                            openOfficialSchedule(teacherUrl)
+                            OfficialSchedulePage.fromUrl(teacherUrl, data.teacher)
+                                ?.let(onOpenSchedule)
                         } else Modifier
                     )
                     Spacer(Modifier.height(6.dp))
                     Surface(shape = RoundedCornerShape(10.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         modifier = if (roomUrl != null) Modifier.clickable {
-                            openOfficialSchedule(roomUrl)
+                            OfficialSchedulePage.fromUrl(roomUrl, "Ауд. " + data.room)
+                                ?.let(onOpenSchedule)
                         } else Modifier
                     ) {
                         Text("Ауд. " + data.room + if (roomUrl != null) " ↗" else "",
