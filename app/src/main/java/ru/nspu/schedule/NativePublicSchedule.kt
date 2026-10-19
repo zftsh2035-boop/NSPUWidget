@@ -2,7 +2,6 @@ package ru.nspu.schedule
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -104,6 +103,13 @@ fun NativePublicSchedule(
         listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
     }
     val timetable = if (displayedRequest == requestKey) data else cachedInMemory
+    val daysData = remember(timetable) {
+        (0..5).map { day -> timetable?.byDay(day).orEmpty().map { it.present() } }
+    }
+    val datedData = remember(timetable) {
+        listOf(timetable?.dated(PublicSection.DATED).orEmpty().map { it.present() },
+            timetable?.dated(PublicSection.EXAMS).orEmpty().map { it.present() })
+    }
     val monday = timetable?.weekStart ?: LocalDate.now(ZONE)
         .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         .plusWeeks(weekShift.toLong())
@@ -151,7 +157,7 @@ fun NativePublicSchedule(
                     modifier = Modifier.padding(horizontal = 17.dp, vertical = 2.dp))
             }
             SecondaryTabRow(selectedTabIndex = selectedTab) {
-                listOf("Неделя", "По датам", "Экзамены").forEachIndexed { i, name ->
+                listOf("Очные", "Заочные", "Сессия").forEachIndexed { i, name ->
                     Tab(selected = selectedTab == i, onClick = { selectedTab = i },
                         text = { Text(name, maxLines = 1) })
                 }
@@ -179,8 +185,8 @@ fun NativePublicSchedule(
                     }
                 } else {
                     val lessons = when (selectedTab) {
-                        1 -> timetable.dated(PublicSection.DATED)
-                        2 -> timetable.dated(PublicSection.EXAMS)
+                        1 -> datedData[0]
+                        2 -> datedData[1]
                         else -> emptyList()
                     }
                     LazyColumn(
@@ -190,7 +196,7 @@ fun NativePublicSchedule(
                     ) {
                         if (selectedTab == 0) {
                             for (i in 0..5) {
-                                val perDay = timetable.byDay(i)
+                                val perDay = daysData[i]
                                 item(key = "d$i") {
                                     Text(dayNames[i] + " · " +
                                         monday.plusDays(i.toLong()).format(fullDate),
@@ -214,8 +220,8 @@ fun NativePublicSchedule(
                                 }
                             }
                         } else {
-                            val header = if (selectedTab == 1) "Занятия по датам"
-                                else "Консультации и экзамены"
+                            val header = if (selectedTab == 1) "Заочные занятия по датам"
+                                else "Сессия · консультации и экзамены"
                             item(key="heading") {
                                 Text(header, style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
@@ -255,62 +261,72 @@ fun NativePublicSchedule(
     }
 }
 
-/** One fast Material 3 card without IntrinsicSize or nested LazyRow. */
+
+/** Precomputed once per downloaded timetable, not during LazyColumn scroll. */
+internal data class PublicLessonPresentation(
+    val subject: String,
+    val time: String,
+    val metadata: String,
+    val weekNotes: String,
+    val kind: String,
+    val date: LocalDate?,
+    val kindLabel: String
+)
+
+private val weekNotePattern = Regex("""\([^)]*нед\.?[^)]*\)""", RegexOption.IGNORE_CASE)
+
+internal fun PublicClass.present(): PublicLessonPresentation {
+    val groups = links.asSequence().filter { it.type == "group" }
+        .map { it.label }.distinct().take(4).joinToString(", ")
+    val rooms = links.asSequence().filter { it.type == "room" }
+        .map { it.label }.distinct().take(3).joinToString(", ")
+    val teachers = links.asSequence().filter { it.type == "teacher" }
+        .map { it.label }.distinct().take(3).joinToString(", ")
+    val details = listOf(groups, rooms, teachers).filter { it.isNotBlank() }.joinToString(" · ")
+    val weeks = weekNotePattern.findAll(description).map { it.value }.distinct().joinToString(" · ")
+    val fallback = description.substringAfter(",", "").trim().substringBefore("(").trim()
+    return PublicLessonPresentation(subject, time, details.ifBlank { fallback }, weeks, kind, date, SiteParser.shortKind(kind))
+}
+
+/** Compact, non-clickable card with all week ranges immediately visible. */
 @Composable
-private fun SimpleTimetableLesson(event: PublicClass) {
-    var expanded by remember(event.description) { mutableStateOf(false) }
-    val groups = remember(event.links) {
-        event.links.filter { it.type == "group" }.map { it.label }
-            .distinct().take(4).joinToString(", ")
-    }
-    val rooms = remember(event.links) {
-        event.links.filter { it.type == "room" }.map { it.label }
-            .distinct().take(3).joinToString(", ")
-    }
-    val teachers = remember(event.links) {
-        event.links.filter { it.type == "teacher" }.map { it.label }
-            .distinct().take(3).joinToString(", ")
-    }
-    val meta = listOf(groups, rooms, teachers).filter { it.isNotBlank() }.joinToString(" · ")
+private fun SimpleTimetableLesson(lesson: PublicLessonPresentation) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth()
-            .clickable { expanded = !expanded }
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(event.subject, modifier = Modifier.weight(1f),
+                Text(lesson.subject, modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = if (expanded) 10 else 2,
-                    overflow = TextOverflow.Ellipsis)
-                Text(event.time, style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold)
+                Text(lesson.time, style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(meta.ifBlank { event.description.substringAfter(",").trim() },
-                    modifier = Modifier.weight(1f),
+            if (lesson.metadata.isNotBlank()) {
+                Text(lesson.metadata,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) 8 else 2,
-                    overflow = TextOverflow.Ellipsis)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(lesson.weekNotes, modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
                 val accent = MaterialTheme.colorScheme.primary
                 Surface(shape = RoundedCornerShape(7.dp),
                     color = accent.copy(alpha = .10f)) {
-                    Text(SiteParser.shortKind(event.kind),
+                    Text(lesson.kindLabel,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = accent, fontWeight = FontWeight.Bold)
                 }
-            }
-            if (expanded) {
-                Text(event.description, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

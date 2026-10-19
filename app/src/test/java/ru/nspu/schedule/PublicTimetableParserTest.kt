@@ -96,4 +96,22 @@ class PublicTimetableParserTest {
         assertNull(OfficialSchedulePage.fromUrl("https://schedule.nspu.ru/room_shedule.php?id=159&old=1"))
         assertNull(OfficialSchedulePage.fromUrl("https://schedule.nspu.ru/room_shedule.php?id=0"))
     }
+    @Test fun presentationShowsWeekRangesWithoutExpandingCard() {
+        val lesson = PublicClass(
+            time = "8:30-10:00", subject = "Русский язык и культура речи",
+            description = "Русский язык и культура речи, 3.008.2.26, Кабинет №206, (л.): 2,6-9 нед.",
+            kind = "ЛЕКЦИЯ",
+            links = listOf(
+                PublicReference("3.008.2.26", "https://schedule.nspu.ru/group_shedule.php?id=3328","group"),
+                PublicReference("Кабинет №206", "https://schedule.nspu.ru/room_shedule.php?id=159","room")
+            )
+        )
+        val view = lesson.present()
+        assertEquals("8:30-10:00", view.time)
+        assertTrue(view.weekNotes.contains("2,6-9 нед."))
+        assertTrue(view.metadata.contains("3.008.2.26"))
+        assertTrue(view.metadata.contains("Кабинет №206"))
+        assertEquals("л.", view.kindLabel)
+    }
+
 }
