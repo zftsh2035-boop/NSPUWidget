@@ -114,4 +114,24 @@ class PublicTimetableParserTest {
         assertEquals("л.", view.kindLabel)
     }
 
+    @Test fun weekRangeAfterClosingTypeParenthesisIsAlwaysDisplayed() {
+        val event = PublicClass(
+            "8:30-10:00", "Русский язык",
+            "Русский язык, 3.008.2.26 ИСиТвО, Кабинет №206, (л.): 2,6-9 нед.",
+            "ЛЕКЦИЯ", emptyList()
+        )
+        val ui = event.present()
+        assertTrue("Exact official week range must be visible", ui.weekNotes.contains("2,6-9 нед."))
+        assertTrue(ui.weekNotes.contains("(л.)"))
+        assertTrue(ui.metadata.contains("3.008.2.26"))
+    }
+    @Test fun bothWeekAnnotationStylesAreSupported() {
+        val event = PublicClass("10:10-11:40", "Математика",
+            "Математика, (л.: 2 нед.), (п.з.): 6-10 нед.",
+            "ПРАКТИКА", emptyList())
+        val notes = event.present().weekNotes
+        assertTrue(notes.contains("2 нед."))
+        assertTrue(notes.contains("6-10 нед."))
+    }
+
 }

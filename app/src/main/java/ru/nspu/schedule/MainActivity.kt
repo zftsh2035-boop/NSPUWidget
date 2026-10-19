@@ -207,6 +207,8 @@ class MainActivity : ComponentActivity() {
             })
         }
         val listState = rememberLazyListState()
+        // Avoid running expensive highlight/background animations during vertical scroll.
+        val listScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
         val date = remember(refreshTick) { Store.date(this) }
         val lessons = remember(refreshTick, date) { Store.forDate(this, date) }
         val timeline = remember(lessons) { DayTimeline.build(lessons) }
@@ -282,7 +284,7 @@ class MainActivity : ComponentActivity() {
             if (selectedTab == 0 && autoScroll && focusIndex >= 0) {
                 val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
                     1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
-                listState.animateScrollToItem(prefix + focusIndex)
+                listState.scrollToItem(prefix + focusIndex)
             } else if (selectedTab != 0) listState.scrollToItem(0)
         }
         Scaffold(
@@ -447,7 +449,8 @@ class MainActivity : ComponentActivity() {
                         when (row) {
                             is DayRow.LessonRow -> LessonCard(row.lesson, date,
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
-                                focusedLesson?.ongoing == true, animateHighlight, screenActive, onOpenSchedule)
+                                focusedLesson?.ongoing == true, animateHighlight && !listScrolling,
+                                screenActive, onOpenSchedule)
                             is DayRow.WindowRow -> GapCard(row)
                         }
                     }

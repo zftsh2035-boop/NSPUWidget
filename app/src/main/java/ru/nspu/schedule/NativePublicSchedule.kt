@@ -120,7 +120,7 @@ fun NativePublicSchedule(
                 Column {
                     Text(page.title, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(if (page.kind == OfficialSchedulePage.Kind.TEACHER)
                             "Расписание преподавателя" else "Расписание аудитории",
                         style = MaterialTheme.typography.labelSmall,
@@ -273,7 +273,10 @@ internal data class PublicLessonPresentation(
     val kindLabel: String
 )
 
-private val weekNotePattern = Regex("""(?:\([^)]*нед\.?[^)]*\)|\((?:л\.з\.|п\.з\.|л\.|экз\.|зач\.|практика|лекция)\)\s*:\s*[\d,\s–-]+\s*нед\.?)""", RegexOption.IGNORE_CASE)
+// NSPU uses both "(л.: 2,6-9 нед.)" and "(л.): 2,6-9 нед.".
+private val weekNotePattern = Regex(
+    """(?iu)(?:\((?:л\.з\.|п\.з\.|л\.|практика)\)\s*:\s*[\d,\s\-–]+\s*нед\.?|\([^)]*нед\.?[^)]*\))"""
+)
 
 internal fun PublicClass.present(): PublicLessonPresentation {
     val groups = links.asSequence().filter { it.type == "group" }
