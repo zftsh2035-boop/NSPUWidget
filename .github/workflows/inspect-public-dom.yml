@@ -1,0 +1,43 @@
+name: Inspect public timetable DOM
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/inspect-public-dom.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Inspect public NSPU HTML for native timetable parser
+        run: |
+          python3 - <<'PY'
+          import urllib.request,re
+          from html.parser import HTMLParser
+          for name,script in [('TEACHER','teacher_shedule.php?id=452'),('ROOM','room_shedule.php?id=159')]:
+              try:
+                  req=urllib.request.Request('https://schedule.nspu.ru/'+script,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=20) as f: raw=f.read()
+                  html=raw.decode('utf-8-sig','replace')
+                  print('\n###',name,'BYTES',len(raw))
+                  print('HEAD',html[:1600].replace('\n',' '))
+                  for marker in ['Числитель','Знаменатель','Понедельник','Заочное отделение','Расписание консультаций']:
+                      found=re.search(marker,html,re.I)
+                      if found: print('\nMARKER',marker,'AT',found.start(),'CONTEXT:\n',html[max(0,found.start()-1800):found.start()+2500])
+                  class Structure(HTMLParser):
+                      def __init__(self):
+                          super().__init__();self.counts={};self.attrs={}
+                      def handle_starttag(self,tag,attrs):
+                          if tag in ['table','tbody','thead','tr','td','th','div','section','h2','h3']:
+                              self.counts[tag]=self.counts.get(tag,0)+1
+                              if tag in ['table','div','section','h2','h3']:
+                                  entry=' '.join(k+'='+v for k,v in attrs if k in ('class','id'))
+                                  if entry:self.attrs[entry]=self.attrs.get(entry,0)+1
+                  parser=Structure();parser.feed(html)
+                  print('\nTAGS',parser.counts)
+                  print('CLASSES',list(parser.attrs.items())[:90])
+              except Exception as exc:print('FETCH_ERROR',name,type(exc).__name__,str(exc))
+          PY
