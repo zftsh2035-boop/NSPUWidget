@@ -15,6 +15,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -431,7 +435,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
-                    items(timeline) { row ->
+                    items(timeline, key = { row ->
+                        when (row) {
+                            is DayRow.LessonRow -> "lesson:" + row.lesson.time + ":" + row.lesson.raw
+                            is DayRow.WindowRow -> "window:" + row.start + ":" + row.end
+                        }
+                    }) { row ->
                         when (row) {
                             is DayRow.LessonRow -> LessonCard(row.lesson, date,
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
@@ -852,8 +861,15 @@ class MainActivity : ComponentActivity() {
             border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                 else BorderStroke(1.dp, accent.copy(alpha = .34f)),
             modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                Box(Modifier.fillMaxHeight().width(5.dp).background(accent))
+            // drawBehind paints the accent at full row height without expensive
+            // IntrinsicSize.Min two-pass measurement for every lesson card.
+            Row(Modifier.fillMaxWidth().drawBehind {
+                val stripe = 5.dp.toPx()
+                drawRoundRect(color = accent, topLeft = Offset.Zero,
+                    size = Size(stripe, size.height),
+                    cornerRadius = CornerRadius(2.dp.toPx()))
+            }) {
+                Spacer(Modifier.width(5.dp))
                 Column(Modifier.width(84.dp).padding(start = 12.dp, top = 14.dp)) {
                     Text(lesson.time.substringBefore('-'), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text(lesson.time.substringAfter('-', ""), fontSize = 11.sp,
