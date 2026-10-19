@@ -223,9 +223,12 @@ class MainActivity : ComponentActivity() {
             delay(1700)
             val page = withContext(Dispatchers.Default) {
                 lessons.asSequence().mapNotNull { lesson ->
-                    val name = SiteParser.details(lesson, date, Store.termStart(this@MainActivity)).teacher
-                    Store.teacherScheduleUrl(this@MainActivity, name)
-                        ?.let { OfficialSchedulePage.fromUrl(it, name) }
+                    Store.teacherScheduleUrl(this@MainActivity, lesson.raw)
+                        ?.let { url ->
+                            val name = Store.teacherNameForLesson(this@MainActivity, lesson.raw)
+                                ?: "Преподаватель"
+                            OfficialSchedulePage.fromUrl(url, name)
+                        }
                 }.firstOrNull()
             } ?: return@LaunchedEffect
             withContext(Dispatchers.IO) {
@@ -912,15 +915,17 @@ class MainActivity : ComponentActivity() {
                     Text(data.subject, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(5.dp))
-                    val teacherUrl = Store.teacherScheduleUrl(this@MainActivity, data.teacher)
+                    val teacherName =
+                        Store.teacherNameForLesson(this@MainActivity, lesson.raw) ?: data.teacher
+                    val teacherUrl = Store.teacherScheduleUrl(this@MainActivity, lesson.raw)
                     val roomUrl = Store.roomScheduleUrl(this@MainActivity, data.room)
                     Text(
-                        data.teacher + if (teacherUrl != null) " ↗" else "",
+                        teacherName + if (teacherUrl != null) " ↗" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (teacherUrl != null) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = if (teacherUrl != null) Modifier.clickable {
-                            OfficialSchedulePage.fromUrl(teacherUrl, data.teacher)
+                            OfficialSchedulePage.fromUrl(teacherUrl, teacherName)
                                 ?.let(onOpenSchedule)
                         } else Modifier
                     )

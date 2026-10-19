@@ -178,6 +178,9 @@ object Store {
     fun teacherScheduleUrl(c: Context, teacher: String): String? =
         ScheduleLinks.teacherUrl(currentLinks(c), teacher)
 
+    fun teacherNameForLesson(c: Context, raw: String): String? =
+        ScheduleLinks.teacherLink(currentLinks(c), raw)?.label
+
     fun roomScheduleUrl(c: Context, room: String): String? =
         ScheduleLinks.roomUrl(currentLinks(c), room)
 

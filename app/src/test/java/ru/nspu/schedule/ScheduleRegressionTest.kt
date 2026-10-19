@@ -267,4 +267,15 @@ class ScheduleRegressionTest {
         assertNull(ScheduleLinks.roomUrl(links, "—"))
     }
 
+
+    @Test fun teacherIsResolvedFromActualLessonTextNotTheFirstCommaSeparatedField() {
+        val links = ScheduleLinks.fromPage(org.jsoup.Jsoup.parse(
+            "<a href='teacher_shedule.php?id=452'>И.Н.Азарова</a>",
+            "https://schedule.nspu.ru/group_shedule.php?id=3328"))
+        val raw = "Русский язык и культура речи, ИФМИТО, (л.: 2,6-9 нед.) ст.преп. И.Н.Азарова"
+        assertEquals("И.Н.Азарова", ScheduleLinks.teacherLink(links, raw)?.label)
+        assertEquals("https://schedule.nspu.ru/teacher_shedule.php?id=452",
+            ScheduleLinks.teacherUrl(links, raw))
+    }
+
 }

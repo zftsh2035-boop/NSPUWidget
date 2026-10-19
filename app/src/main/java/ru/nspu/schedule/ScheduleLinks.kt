@@ -37,13 +37,16 @@ object ScheduleLinks {
         ScheduleLink(kind, label, "$HOST/$path?id=$id")
     }.distinctBy { it.kind to it.label }
 
-    fun teacherUrl(links: List<ScheduleLink>, display: String): String? {
-        val candidate = normalized(display)
-        return links.filter { it.kind == ScheduleLinkKind.TEACHER }.firstOrNull {
-            val key = normalized(it.label)
-            key.length >= 5 && candidate.contains(key)
-        }?.url
+    fun teacherLink(links: List<ScheduleLink>, raw: String): ScheduleLink? {
+        val candidate = normalized(raw)
+        return links.firstOrNull {
+            it.kind == ScheduleLinkKind.TEACHER &&
+                normalized(it.label).let { key -> key.length >= 5 && candidate.contains(key) }
+        }
     }
+
+    fun teacherUrl(links: List<ScheduleLink>, display: String): String? =
+        teacherLink(links, display)?.url
 
     fun roomUrl(links: List<ScheduleLink>, room: String): String? {
         val wanted = roomLabel(room)
