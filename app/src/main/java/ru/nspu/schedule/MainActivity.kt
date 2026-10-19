@@ -195,7 +195,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        var selectedTab by remember {
+        var selectedTab by androidx.compose.runtime.saveable.rememberSaveable {
             mutableIntStateOf(when {
                 intent.getBooleanExtra("show_changes", false) -> 2
                 intent.getBooleanExtra("show_notices", false) -> 1
