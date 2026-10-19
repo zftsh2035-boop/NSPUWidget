@@ -49,6 +49,11 @@ jobs:
           fi
       - name: Run schedule regression tests
         run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Verify parser against the live public NSPU HTML (dev)
+        if: github.ref == 'refs/heads/dev'
+        env:
+          NSPU_LIVE: 'true'
+        run: gradle --no-daemon :app:testDebugUnitTest --tests ru.nspu.schedule.PublicTimetableLiveTest --rerun-tasks
       - name: Assemble R8 optimized APKs
         env:
           NSPU_KEYSTORE_PASSWORD: ${{ secrets.NSPU_KEYSTORE_PASSWORD }}
