@@ -26,6 +26,8 @@ object Store {
     private var languageSnapshot: List<String> = emptyList()
     private var noticeRaw: String? = null
     private var noticeSnapshot: List<Notice> = emptyList()
+    private var linksRaw: String? = null
+    private var linksSnapshot: List<ScheduleLink> = emptyList()
     private var historyRaw: String? = null
     private var historySnapshot: List<String> = emptyList()
     fun availableSubgroups(c: Context): List<String> {
@@ -47,32 +49,58 @@ object Store {
     fun selectScheduleGroup(c: Context, id: Int, name: String) {
         if (id == scheduleGroupId(c)) return
         prefs(c).edit().putInt("group_id", id).putString("group_name", name)
-            .putString("subgroup", "Все").putInt("offset", 0)
+            .putString("subgroup", "Все").putInt("offset", 0).remove("selected_date")
             .remove("lessons").remove("notices").remove("known_notice_ids")
             .remove("term_start").remove("change_history").remove("dismissed_notices")
-            .remove("updated").remove("error")
+            .remove("updated").remove("error").remove("schedule_links")
             .commit()
     }
     fun focus(c: Context, now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): FocusedLesson? =
         LessonFocus.choose(now) { day -> forDate(c, day) }
 
-    /** On the live view, move to the next teaching day when today's final lesson is over. */
+    /** Null = automatic next-lesson day; non-null = user's explicit calendar day.
+     * Import older offset prefs only if nonzero; 0 used to mean automatic selection.
+     */
+    private fun chosenDate(c: Context, today: LocalDate): LocalDate? {
+        val p = prefs(c)
+        p.getString("selected_date", null)?.let { raw ->
+            return runCatching { LocalDate.parse(raw) }.getOrNull()
+        }
+        val legacyOffset = p.getInt("offset", 0)
+        return if (legacyOffset != 0) today.plusDays(legacyOffset.toLong()) else null
+    }
+
     fun date(c: Context): LocalDate {
         val today = LocalDate.now(ZONE)
-        val stored = prefs(c).getInt("offset", 0)
-        if (stored != 0) return today.plusDays(stored.toLong())
-        return focus(c)?.date ?: today
+        val selected = chosenDate(c, today)
+        if (selected != null) return selected // No expensive focus scan on manual navigation.
+        return DayNavigation.visible(today, null, focus(c)?.date)
+    }
+
+    fun selectDate(c: Context, value: LocalDate) {
+        prefs(c).edit().putString("selected_date", value.toString()).remove("offset").apply()
     }
 
     fun jump(c: Context, daysFromToday: Int) {
-        prefs(c).edit().putInt("offset", daysFromToday.coerceIn(-7, 35)).apply()
+        selectDate(c, LocalDate.now(ZONE).plusDays(daysFromToday.toLong()))
     }
-    fun resetDate(c: Context) { prefs(c).edit().putInt("offset", 0).apply() }
+
+    /** "Today" explicitly selects today, without snapping to tomorrow after last class. */
+    fun resetDate(c: Context) = selectDate(c, LocalDate.now(ZONE))
+
+    /** Optional return to the automatic live view on a future navigation action. */
+    fun useAutomaticDay(c: Context) {
+        prefs(c).edit().remove("selected_date").remove("offset").apply()
+    }
+
     fun offset(c: Context, delta: Int) {
-        val p = prefs(c)
-        val shown = ChronoUnit.DAYS.between(LocalDate.now(ZONE), date(c)).toInt()
-        p.edit().putInt("offset", (shown + delta).coerceIn(-7, 35)).apply()
+        val today = LocalDate.now(ZONE)
+        val selected = chosenDate(c, today)
+        val shown = if (selected != null) selected else
+            DayNavigation.visible(today, null, focus(c)?.date)
+        selectDate(c, shown.plusDays(delta.toLong()))
     }
+
     fun termStart(c: Context): LocalDate = runCatching {
         LocalDate.parse(prefs(c).getString("term_start", "2026-09-01"))
     }.getOrDefault(LocalDate.of(2026, 9, 1))
@@ -134,6 +162,25 @@ object Store {
         prefs(c).edit().putString("notices", noticesJson(saved).toString()).apply()
     }
 
+    private fun currentLinks(c: Context): List<ScheduleLink> {
+        val raw = prefs(c).getString("schedule_links", "[]") ?: "[]"
+        return synchronized(cacheLock) {
+            if (raw != linksRaw) {
+                linksSnapshot = ScheduleLinks.decode(raw)
+                linksRaw = raw
+            }
+            linksSnapshot
+        }
+    }
+
+    fun missingScheduleLinks(c: Context) = !prefs(c).contains("schedule_links")
+
+    fun teacherScheduleUrl(c: Context, teacher: String): String? =
+        ScheduleLinks.teacherUrl(currentLinks(c), teacher)
+
+    fun roomScheduleUrl(c: Context, room: String): String? =
+        ScheduleLinks.roomUrl(currentLinks(c), room)
+
     fun status(c: Context) = prefs(c).getString("updated", "Ещё не загружено") ?: ""
     fun error(c: Context) = prefs(c).getString("error", "") ?: ""
     fun forDate(c: Context, date: LocalDate): List<Lesson> {
@@ -167,9 +214,11 @@ object Store {
             setRequestProperty("Accept", "text/html")
         }
         val snapshot: PageSnapshot
+        val pageLinks: List<ScheduleLink>
         try {
             if (connection.responseCode != 200) error("HTTP ${connection.responseCode}")
             val doc = Jsoup.parse(connection.inputStream, null, url)
+            pageLinks = ScheduleLinks.fromPage(doc)
             doc.select("script,style,nav,footer").remove()
             snapshot = SiteParser.parse(doc.body().text(), scheduleGroupCode(c))
         } finally { connection.disconnect() }
@@ -214,6 +263,7 @@ object Store {
             .putString("known_notice_ids", combinedKnown.joinToString("|"))
             .putString("term_start", start.toString())
             .putString("change_history", logJson.toString())
+            .putString("schedule_links", ScheduleLinks.encode(pageLinks))
             .putString("updated", timestamp)
             .putString("error", "")
             .commit()

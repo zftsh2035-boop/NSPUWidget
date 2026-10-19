@@ -223,4 +223,48 @@ class ScheduleRegressionTest {
         assertEquals(WidgetMode.NEON, WidgetTheme.mode(applicationChoice, true))
     }
 
+
+    @Test fun selectingPreviousDayFromAutomaticTomorrowDoesNotSnapBack() {
+        val today = LocalDate.of(2026,10,19)
+        val nextClass = today.plusDays(1)
+        assertEquals(nextClass, DayNavigation.visible(today, null, nextClass))
+        val selected = DayNavigation.move(today, null, nextClass, -1)
+        assertEquals(today, selected)
+        // Offset=0 is a valid explicit user choice, NOT the automatic mode.
+        assertEquals(today, DayNavigation.visible(today, selected, nextClass))
+        assertEquals(today.minusDays(1), DayNavigation.move(today, selected, nextClass, -1))
+        assertEquals(nextClass, DayNavigation.move(today, selected, nextClass, +1))
+    }
+
+    @Test fun explicitCalendarDateStaysFixedAfterMidnight() {
+        val monday = LocalDate.of(2026,10,19)
+        val tuesday = monday.plusDays(1)
+        assertEquals(monday, DayNavigation.visible(tuesday, monday, tuesday.plusDays(1)))
+        assertEquals(tuesday, DayNavigation.visible(tuesday, null, tuesday))
+    }
+
+    @Test fun officialTeacherRoomLinksExtractedNotInvented() {
+        val html = """
+          <html><body>
+            <a href="teacher_shedule.php?id=452">И.Н.Азарова</a>
+            <a href="room_shedule.php?id=159">а. 206</a>
+            <a href="room_shedule.php?id=19">а. 417</a>
+            <a href="https://evil.example/teacher_shedule.php?id=9">И.Н.Злодей</a>
+            <a href="group_shedule.php?id=3328">3.008.2.26</a>
+          </body></html>
+        """.trimIndent()
+        val doc = org.jsoup.Jsoup.parse(html,"https://schedule.nspu.ru/group_shedule.php?id=3328")
+        val links = ScheduleLinks.fromPage(doc)
+        assertEquals(3, links.size)
+        assertEquals("https://schedule.nspu.ru/teacher_shedule.php?id=452",
+            ScheduleLinks.teacherUrl(links, "ст.преп. И.Н.Азарова"))
+        assertEquals("https://schedule.nspu.ru/room_shedule.php?id=159",
+            ScheduleLinks.roomUrl(links, "206"))
+        assertEquals("https://schedule.nspu.ru/room_shedule.php?id=19",
+            ScheduleLinks.roomUrl(links, "417"))
+        assertNull(ScheduleLinks.roomUrl(links, "999"))
+        assertNull(ScheduleLinks.teacherUrl(links, "доц. И.Н.Злодей"))
+        assertNull(ScheduleLinks.roomUrl(links, "—"))
+    }
+
 }

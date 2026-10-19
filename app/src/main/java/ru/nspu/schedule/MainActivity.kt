@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
     private var screenActive by mutableStateOf(false)
     private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key in setOf("lessons", "notices", "updated", "error", "change_history",
-                "group_id", "subgroup", "offset", "term_start")) {
+                "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start")) {
             if (Looper.myLooper() == Looper.getMainLooper()) scheduleRevision++
             else runOnUiThread { scheduleRevision++ }
         }
@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         getSharedPreferences("schedule", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(scheduleListener)
         Sync.schedule(this)
-        if (Store.cached(this).isEmpty()) Sync.now(this)
+        if (Store.cached(this).isEmpty() || Store.missingScheduleLinks(this)) Sync.now(this)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
@@ -128,6 +128,15 @@ class MainActivity : ComponentActivity() {
                     currentTheme = value
                 }
             }
+        }
+    }
+
+    private fun openOfficialSchedule(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            android.widget.Toast.makeText(this, "Не удалось открыть сайт НГПУ",
+                android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -854,12 +863,26 @@ class MainActivity : ComponentActivity() {
                     Text(data.subject, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(5.dp))
-                    Text(data.teacher, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val teacherUrl = Store.teacherScheduleUrl(this@MainActivity, data.teacher)
+                    val roomUrl = Store.roomScheduleUrl(this@MainActivity, data.room)
+                    Text(
+                        data.teacher + if (teacherUrl != null) " ↗" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (teacherUrl != null) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = if (teacherUrl != null) Modifier.clickable {
+                            openOfficialSchedule(teacherUrl)
+                        } else Modifier
+                    )
                     Spacer(Modifier.height(6.dp))
                     Surface(shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer) {
-                        Text("Ауд. " + data.room, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = if (roomUrl != null) Modifier.clickable {
+                            openOfficialSchedule(roomUrl)
+                        } else Modifier
+                    ) {
+                        Text("Ауд. " + data.room + if (roomUrl != null) " ↗" else "",
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             style = MaterialTheme.typography.labelMedium)
                     }
