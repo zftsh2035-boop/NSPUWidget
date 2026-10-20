@@ -1,0 +1,69 @@
+package ru.nspu.schedule
+
+import androidx.compose.runtime.Immutable
+import java.time.LocalDate
+import java.util.Locale
+
+/** A dated occurrence, independent of the downloaded HTML, room and teacher. */
+@Immutable
+internal data class NoteTarget(
+    val groupId: Int,
+    val date: LocalDate,
+    val subject: String,
+    val time: String,
+    val kind: String,
+    val subgroup: String
+) {
+    val subjectKey = normalize(subject)
+    val identity = listOf(groupId.toString(), date.toString(), subjectKey, kind, subgroup)
+    val slot = identity + normalizeTime(time)
+
+    companion object {
+        private val spaces = Regex("\\s+")
+        private fun normalize(value: String) = value.trim().lowercase(Locale.ROOT)
+            .replace('ё', 'е').replace(spaces, " ")
+        private fun normalizeTime(value: String) = value.replace('–', '-').replace('—', '-')
+            .split('-').joinToString("-") { it.trim().padStart(5, '0') }
+
+        fun of(groupId: Int, card: LessonPresentation) = NoteTarget(groupId, card.date,
+            card.subject, card.lesson.time, card.kind, SiteParser.subgroupKey(card.lesson))
+    }
+}
+
+@Immutable
+internal data class PersonalNote(val id: String, val target: NoteTarget, val text: String,
+    val updatedAt: Long) {
+    val preview = text.trim().replace(previewSpaces, " ")
+    companion object {
+        const val MAX_LENGTH = 4000
+        private val previewSpaces = Regex("\\s+")
+    }
+}
+
+@Immutable
+internal data class NoteEditorRequest(val target: NoteTarget, val note: PersonalNote? = null)
+
+/** Never guess between two same-subject lessons. A unique time change on that day is safe. */
+internal object NoteMatching {
+    fun resolve(targets: List<NoteTarget>, notes: List<PersonalNote>): Map<NoteTarget, PersonalNote> {
+        val notesByIdentity = notes.groupBy { it.target.identity }
+        val occurrences = targets.groupingBy { it.identity }.eachCount()
+        return targets.mapNotNull { target ->
+            val candidates = notesByIdentity[target.identity].orEmpty()
+            val exact = candidates.singleOrNull { it.target.slot == target.slot }
+            val moved = if (occurrences[target.identity] == 1) candidates.singleOrNull() else null
+            (exact ?: moved)?.let { target to it }
+        }.toMap()
+    }
+}
+
+/** One background pass supplies both app rows and RemoteViews; rows never read storage. */
+internal fun prepareLessonCards(groupId: Int, date: LocalDate, lessons: List<Lesson>,
+    termStart: LocalDate, links: ScheduleLinks.Index, notes: List<PersonalNote>): Map<Lesson, LessonPresentation> {
+    val cards = lessons.map { it.present(date, termStart, links) }
+    val targets = cards.map { NoteTarget.of(groupId, it) }
+    val matches = NoteMatching.resolve(targets, notes)
+    return cards.zip(targets).associate { (card, target) ->
+        card.lesson to card.copy(noteTarget = target, note = matches[target])
+    }
+}

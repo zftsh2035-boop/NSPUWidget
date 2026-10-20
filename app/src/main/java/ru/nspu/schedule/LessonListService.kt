@@ -29,7 +29,10 @@ class LessonListService : RemoteViewsService() {
             rows = DayTimeline.build(lessons)
             val links = ScheduleLinks.Index(data.currentLinks())
             val start = data.termStart()
-            cards = lessons.associateWith { it.present(date, start, links) }
+            val notes = runCatching { Notes.forDay(context, data.id, date) }
+                .onFailure { android.util.Log.e("NSPUWidget", "Cannot read widget notes", it) }
+                .getOrDefault(emptyList())
+            cards = prepareLessonCards(data.id, date, lessons, start, links, notes)
             focus = data.focus()
             themeMode = WidgetTheme.mode(context)
             colors = WidgetTheme.palette(context)
@@ -67,6 +70,7 @@ class LessonListService : RemoteViewsService() {
                 setTextColor(R.id.lessonRoom, colors.room)
                 setTextColor(R.id.lessonState, colors.accent)
                 setTextColor(R.id.lessonChanged, colors.change)
+                setTextColor(R.id.lessonNote, colors.accent)
                 setTextViewText(R.id.lessonState,
                     if (focus?.ongoing == true) "● до " + lesson.time.substringAfter('-')
                     else "● в " + lesson.time.substringBefore('-'))
@@ -81,6 +85,12 @@ class LessonListService : RemoteViewsService() {
                 setTextViewText(R.id.lessonRoom, if (detail.room == "—") "—" else "ауд.\n" + detail.room)
                 setViewVisibility(R.id.lessonChanged, if (lesson.changed) View.VISIBLE else View.GONE)
                 setOnClickFillInIntent(R.id.lessonCard, Intent())
+                setViewVisibility(R.id.lessonNote, if (detail.note != null) View.VISIBLE else View.GONE)
+                setTextViewText(R.id.lessonNote, detail.note?.let { "Заметка: " + it.preview }.orEmpty())
+                detail.noteTarget?.let { target ->
+                    setOnClickFillInIntent(R.id.lessonNote,
+                        NotesNavigation.fill(Intent(), target, detail.note))
+                }
             }
         }
 

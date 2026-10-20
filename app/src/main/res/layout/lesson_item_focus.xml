@@ -40,6 +40,10 @@
             android:layout_height="wrap_content" android:textColor="#BFD0E5"
             android:textSize="11sp" android:maxLines="2"
             android:ellipsize="end" android:layout_marginTop="4dp"/>
+        <TextView android:id="@+id/lessonNote" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="5dp"
+            android:paddingTop="3dp" android:paddingBottom="3dp" android:textSize="12sp"
+            android:maxLines="3" android:ellipsize="end" android:visibility="gone"/>
     </LinearLayout>
     <TextView android:id="@+id/lessonRoom" android:layout_width="62dp"
         android:layout_height="wrap_content" android:background="@drawable/room_panel"

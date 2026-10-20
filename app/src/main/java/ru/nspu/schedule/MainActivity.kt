@@ -23,9 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var scheduleRevision by mutableIntStateOf(0)
     private var screenActive by mutableStateOf(false)
     private var navigationRequest by mutableLongStateOf(0L)
+    private var incomingNote: NoteEditorRequest? = null
     private val scheduleKeys = setOf("lessons", "notices", "updated", "error", "change_history",
         "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start", "favorites", "primary_group_id")
     private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -78,8 +81,12 @@ class MainActivity : ComponentActivity() {
                 Store.selectScheduleGroup(applicationContext, it.id, it.title)
                 if (Store.data(applicationContext, it.id).cached().isEmpty()) Sync.now(applicationContext, it.id)
             }
+            val note = runCatching { NotesNavigation.read(applicationContext, value) }
+                .onFailure { android.util.Log.e("NSPUWidget", "Cannot open note", it) }.getOrNull()
+            if (note != null) Store.appView(applicationContext).selectDate(note.target.date)
             withContext(Dispatchers.Main) {
                 setIntent(value)
+                incomingNote = note
                 navigationRequest = System.nanoTime()
                 scheduleRevision++
             }
@@ -119,7 +126,7 @@ class MainActivity : ComponentActivity() {
             // Refresh existing launcher instances immediately after an APK upgrade.
             ScheduleWidget.renderAll(applicationContext)
         }
-        handleWidgetIntent(intent)
+        if (savedInstanceState == null) handleWidgetIntent(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
@@ -203,11 +210,48 @@ class MainActivity : ComponentActivity() {
         var rerender by remember { mutableIntStateOf(0) }
         val refreshTick = rerender + scheduleRevision // Observe data revision without 15-second global polling.
         var favoritePicker by remember { mutableStateOf(false) }
+        var notesVisible by rememberSaveable { mutableStateOf(false) }
+        var editingNote by rememberSaveable(stateSaver = NoteEditorRequestSaver) {
+            mutableStateOf<NoteEditorRequest?>(null)
+        }
+        var savingNote by remember { mutableStateOf(false) }
+        var noteError by remember { mutableStateOf("") }
+        var notesListError by remember { mutableStateOf("") }
+        val savedNotes by produceState<List<PersonalNote>?>(null, notesVisible, refreshTick) {
+            if (notesVisible) {
+                val result = withContext(Dispatchers.IO) { runCatching { Notes.all(applicationContext) } }
+                notesListError = if (result.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else ""
+                value = result.getOrNull()
+            }
+        }
+
+        fun writeNote(request: NoteEditorRequest, text: String = "", delete: Boolean = false) {
+            if (savingNote) return
+            savingNote = true
+            noteError = ""
+            lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (delete) request.note?.let { Notes.delete(applicationContext, it) }
+                        else Notes.save(applicationContext, request, text)
+                    }
+                }
+                savingNote = false
+                if (result.isSuccess) {
+                    editingNote = null
+                    rerender++
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        runCatching { ScheduleWidget.renderGroup(applicationContext, request.target.groupId) }
+                            .onFailure { android.util.Log.e("NSPUWidget", "Note widget refresh failed", it) }
+                    }
+                } else noteError = "Не удалось сохранить. Текст остался здесь — попробуй ещё раз."
+            }
+        }
         var pendingFocusGroup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
         val selectedGroupId = remember(refreshTick) { Store.scheduleGroupId(this@MainActivity) }
         val snapshot by key(selectedGroupId) {
             produceState<HomeScheduleSnapshot?>(null, refreshTick) {
-                value = withContext(Dispatchers.Default) { Store.homeSnapshot(applicationContext, selectedGroupId) }
+                value = withContext(Dispatchers.IO) { Store.homeSnapshot(applicationContext, selectedGroupId) }
             }
         }
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
@@ -246,7 +290,11 @@ class MainActivity : ComponentActivity() {
                 handledNavigation = navigationRequest
                 selectedTab = if (intent.getBooleanExtra("show_notices", false)) 1 else 0
                 favoritePicker = intent.getBooleanExtra("show_favorites", false)
-                pendingFocusGroup = intent.getIntExtra("open_group_id", -1).takeIf { it > 0 }
+                editingNote = incomingNote
+                noteError = ""
+                notesVisible = false
+                pendingFocusGroup = if (incomingNote == null)
+                    intent.getIntExtra("open_group_id", -1).takeIf { it > 0 } else null
             }
         }
         val listState = rememberLazyListState()
@@ -345,6 +393,9 @@ class MainActivity : ComponentActivity() {
                 CenterAlignedTopAppBar(
                     title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                     actions = {
+                        IconButton(onClick = { notesVisible = true }) {
+                            Icon(painterResource(R.drawable.ic_note), contentDescription = "Мои заметки")
+                        }
                         IconButton(onClick = { favoritePicker = true }, modifier = Modifier.semantics {
                             contentDescription = "Избранные группы"
                         }) { Text("☆", fontSize = 25.sp) }
@@ -508,9 +559,17 @@ class MainActivity : ComponentActivity() {
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
                                 focusedLesson?.ongoing == true, animateHighlight,
                                 screenActive, currentTheme == AppSettings.NEON,
-                                listScrolling, onOpenSchedule)
+                                listScrolling, onOpenSchedule, onOpenNote = { card ->
+                                    card.noteTarget?.let { target ->
+                                        noteError = ""
+                                        editingNote = NoteEditorRequest(target, card.note)
+                                    }
+                                })
                             is DayRow.WindowRow -> GapCard(row)
                         }
+                    }
+                    if (home.notesError.isNotBlank()) item {
+                        Text(home.notesError, color = MaterialTheme.colorScheme.error)
                     }
                 } else if (selectedTab == 1) {
                     item {
@@ -731,6 +790,20 @@ class MainActivity : ComponentActivity() {
                     TextButton(onClick = { showUpdateDialog = false }) { Text("Не сейчас") }
                 }
             )
+        }
+
+        if (notesVisible) NotesListDialog(savedNotes,
+            home.favorites.associate { it.id to it.displayName }, notesListError,
+            onDismiss = { notesVisible = false }, onOpen = { note ->
+                noteError = ""
+                editingNote = NoteEditorRequest(note.target, note)
+            })
+        editingNote?.let { request ->
+            NoteEditor(request,
+                home.favorites.firstOrNull { it.id == request.target.groupId }?.displayName
+                    ?: "Группа №${request.target.groupId}",
+                savingNote, noteError, onDismiss = { editingNote = null },
+                onSave = { writeNote(request, it) }, onDelete = { writeNote(request, delete = true) })
         }
 
         if (favoritePicker) {

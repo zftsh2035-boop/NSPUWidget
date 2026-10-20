@@ -18,5 +18,6 @@ internal data class HomeScheduleSnapshot(
     val error: String,
     val groupId: Int,
     val favorites: List<FavoriteGroup>,
-    val primaryGroupId: Int
+    val primaryGroupId: Int,
+    val notesError: String = ""
 )

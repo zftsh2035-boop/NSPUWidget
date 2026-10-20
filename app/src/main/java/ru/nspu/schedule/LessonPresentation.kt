@@ -16,7 +16,9 @@ internal data class LessonPresentation(
     val start: String,
     val end: String,
     val teacherPage: OfficialSchedulePage?,
-    val roomPage: OfficialSchedulePage?
+    val roomPage: OfficialSchedulePage?,
+    val noteTarget: NoteTarget? = null,
+    val note: PersonalNote? = null
 )
 
 internal fun Lesson.present(date: LocalDate, termStart: LocalDate,

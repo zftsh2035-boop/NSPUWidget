@@ -33,7 +33,7 @@
     <TextView android:id="@+id/compactTeacher" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="3dp"
         android:textColor="#D5E1F3" android:textSize="11sp"
-        android:singleLine="true" android:ellipsize="end"/>
+        android:maxLines="1" android:ellipsize="end"/>
     <TextView android:id="@+id/compactRoom" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="3dp"
         android:textColor="#9DD9FF" android:textSize="11sp"

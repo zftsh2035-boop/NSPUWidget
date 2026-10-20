@@ -58,7 +58,9 @@ object Store {
             .remove("selected_date").remove("offset").apply()
     }
     internal fun homeSnapshot(c: Context, id: Int = scheduleGroupId(c)) =
-        ScheduleView(data(c, id), prefs(c)).homeSnapshot(Favorites.list(c), Favorites.primaryId(c))
+        ScheduleView(data(c, id), prefs(c)).homeSnapshot(Favorites.list(c), Favorites.primaryId(c)) {
+            date -> Notes.forDay(c, id, date)
+        }
     fun cached(c: Context) = data(c).cached()
     fun missingScheduleLinks(c: Context) = data(c).missingScheduleLinks()
     fun source(c: Context) = data(c).source()
@@ -84,16 +86,21 @@ internal class ScheduleView(val data: GroupSchedule, private val settings: Share
     }
     fun useAutomaticDay() { settings.edit().remove("selected_date").remove("offset").apply() }
     fun offset(delta: Int) = selectDate(date().plusDays(delta.toLong()))
-    fun homeSnapshot(favorites: List<FavoriteGroup>, primaryId: Int): HomeScheduleSnapshot {
+    fun homeSnapshot(favorites: List<FavoriteGroup>, primaryId: Int,
+        loadNotes: (LocalDate) -> List<PersonalNote>): HomeScheduleSnapshot {
         val now = LocalDateTime.now(ZONE)
         val focus = data.focus(now)
         val date = chosenDate(now.toLocalDate()) ?: DayNavigation.visible(now.toLocalDate(), null, focus?.date)
         val lessons = data.forDate(date)
         val links = ScheduleLinks.Index(data.currentLinks())
         val start = data.termStart()
-        return HomeScheduleSnapshot(date, lessons, lessons.associateWith { it.present(date, start, links) },
+        val notes = runCatching { loadNotes(date) }
+        notes.exceptionOrNull()?.let { android.util.Log.e("NSPUWidget", "Cannot read personal notes", it) }
+        return HomeScheduleSnapshot(date, lessons,
+            prepareLessonCards(data.id, date, lessons, start, links, notes.getOrDefault(emptyList())),
             DayTimeline.build(lessons), focus, data.notices(), data.scheduleGroupName(),
             data.group(), data.availableSubgroups(), data.changeHistory(), data.status(), data.error(),
-            data.id, favorites, primaryId)
+            data.id, favorites, primaryId,
+            if (notes.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else "")
     }
 }

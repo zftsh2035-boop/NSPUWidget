@@ -4,7 +4,7 @@ android {
     compileSdk = 35
     defaultConfig {
         applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35
-        versionCode = 21; versionName = "2.9"
+        versionCode = 22; versionName = "2.10"
         buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: "unknown"}\"")
     }
     buildFeatures { compose = true; buildConfig = true }

@@ -142,6 +142,10 @@ object SiteParser {
         return "${l.day}|${l.time}|$name|$subgroup"
     }
 
+    fun subgroupKey(l: Lesson): String = subgroupPattern.findAll(l.raw)
+        .map { it.groupValues[1].toInt() }.distinct().sorted().joinToString(",")
+        .ifEmpty { if (l.raw.contains("Немецкий язык", true)) "de" else "all" }
+
     /** Arbitrary notices have no reliable expiry rule. The site controls visibility. */
     @Suppress("UNUSED_PARAMETER")
     fun noticeIsOutdated(notice: Notice, today: LocalDate): Boolean = false

@@ -217,8 +217,8 @@ def main():
     try:
         # ABBA order exposes host/emulator drift instead of attributing one noisy
         # pair of measurements to an app change. Each trial starts from identical data.
-        trials = [('v2.8', args.baseline_apk, False), ('v2.9', args.current_apk, True),
-                  ('repeat-v2.9', args.current_apk, False), ('repeat-v2.8', args.baseline_apk, False)]
+        trials = [('v2.9', args.baseline_apk, False), ('v2.10', args.current_apk, True),
+                  ('repeat-v2.10', args.current_apk, False), ('repeat-v2.9', args.baseline_apk, False)]
         for label, apk, verify in trials:
             adb('uninstall', PKG, check=False)
             adb('install', '-r', args.fixture_apk)

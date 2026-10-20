@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -30,7 +31,8 @@ import java.time.LocalDateTime
 @Composable
 internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing: Boolean,
     animateHighlight: Boolean, active: Boolean, neon: Boolean, scrolling: State<Boolean>,
-    onOpenSchedule: (OfficialSchedulePage) -> Unit) {
+    onOpenSchedule: (OfficialSchedulePage) -> Unit,
+    onOpenNote: (LessonPresentation) -> Unit) {
     val accent = remember(card.kind, neon) {
         Color(if (neon) WidgetTheme.lessonAccent(card.kind, WidgetMode.NEON)
             else SiteParser.lessonColor(card.kind))
@@ -58,6 +60,13 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
                 Text(card.start, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(card.end, fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(onClick = { onOpenNote(card) }, modifier = Modifier.size(40.dp)) {
+                    Icon(painterResource(R.drawable.ic_note),
+                        contentDescription = (if (card.note == null) "Добавить заметку: " else "Изменить заметку: ") +
+                            card.subject + ", " + card.start,
+                        tint = if (card.note != null) primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp))
+                }
             }
             Column(Modifier.weight(1f).padding(vertical = 12.dp, horizontal = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -85,6 +94,15 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
                     modifier = if (card.teacherPage != null) Modifier.clickable(
                         role = Role.Button, onClickLabel = "Расписание преподавателя"
                     ) { onOpenSchedule(card.teacherPage) } else Modifier)
+                card.note?.let { note ->
+                    Spacer(Modifier.height(6.dp))
+                    Text("Заметка: " + note.preview,
+                        style = MaterialTheme.typography.bodySmall, color = primary,
+                        maxLines = 3, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().clickable(
+                            role = Role.Button, onClickLabel = "Изменить или удалить заметку"
+                        ) { onOpenNote(card) }.padding(vertical = 4.dp))
+                }
             }
             RoomBadge(card, onOpenSchedule,
                 Modifier.padding(start = 4.dp, end = 12.dp, top = 14.dp))

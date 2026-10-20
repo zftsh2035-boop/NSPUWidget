@@ -104,12 +104,16 @@ class ScheduleWidget : AppWidgetProvider() {
                     (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
         }
         private fun open(context: Context, widgetId: Int, groupId: Int,
-            notices: Boolean = false, favorites: Boolean = false, mutable: Boolean = false): PendingIntent {
+            notices: Boolean = false, favorites: Boolean = false, mutable: Boolean = false,
+            noteTarget: NoteTarget? = null, note: PersonalNote? = null): PendingIntent {
             val intent = Intent(context, MainActivity::class.java)
-                .setData(Uri.parse("nspuwidget://open/$widgetId/$groupId/$notices/$favorites"))
+                .setData(Uri.parse("nspuwidget://open/$widgetId/$groupId/$notices/$favorites").buildUpon()
+                    .apply { if (noteTarget != null) appendQueryParameter("note", note?.id ?: noteTarget.slot.toString()) }
+                    .build())
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra("open_group_id", groupId).putExtra("show_notices", notices)
                 .putExtra("show_favorites", favorites)
+            if (noteTarget != null) NotesNavigation.fill(intent, noteTarget, note)
             return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
         }
@@ -180,6 +184,21 @@ class ScheduleWidget : AppWidgetProvider() {
                     v.setTextViewText(R.id.compactRoom,
                         if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)
                     v.setTextColor(R.id.compactKind, WidgetTheme.lessonAccent(d.kind, widgetMode))
+                    val notes = runCatching { Notes.forDay(context, data.id, focus.date) }
+                        .onFailure { android.util.Log.e("NSPUWidget", "Cannot read compact notes", it) }
+                        .getOrDefault(emptyList())
+                    val cards = prepareLessonCards(data.id, focus.date, data.forDate(focus.date),
+                        data.termStart(), ScheduleLinks.Index(data.currentLinks()), notes)
+                    val card = cards[focus.lesson]
+                    val note = card?.note
+                    if (note != null) {
+                        v.setTextViewText(R.id.compactTeacher, "Заметка: " + note.preview)
+                        v.setTextColor(R.id.compactTeacher, widgetPalette.accent)
+                        v.setInt(R.id.compactTeacher, "setMaxLines", if (tiny) 1 else 2)
+                    }
+                    v.setOnClickPendingIntent(R.id.compactTeacher,
+                        if (note != null) open(context, widgetId, data.id, noteTarget = card?.noteTarget, note = note)
+                        else open(context, widgetId, data.id))
                 } else {
                     v.setTextViewText(R.id.compactSubject, "Расписание пока не загружено")
                     v.setTextViewText(R.id.compactTeacher, "Нажми, чтобы открыть приложение")
