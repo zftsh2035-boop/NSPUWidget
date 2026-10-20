@@ -60,7 +60,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshWidgets() {
-        lifecycleScope.launch(Dispatchers.IO) { ScheduleWidget.renderAll(applicationContext) }
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { ScheduleWidget.renderAll(applicationContext) }
+                .onFailure { android.util.Log.e("NSPUWidget", "Widget refresh failed", it) }
+        }
     }
 
     override fun onResume() {

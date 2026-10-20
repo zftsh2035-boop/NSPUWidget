@@ -12,7 +12,7 @@ data class ScheduleLink(val kind: ScheduleLinkKind, val label: String, val url: 
 object ScheduleLinks {
     private const val HOST = "https://schedule.nspu.ru"
     private val punctuation = Regex("""[^\p{L}\p{N}#]+""")
-    private val roomPrefix = Regex("""(?iu)^(?:а\.|ауд\.?|аудитория)\s*""")
+    private val roomPrefix = Regex("""(?iu)^(?:аудитория|ауд\.?|а\.)\s*""")
     private val identifier = Regex("""(?:\?|&)id=(\d+)(?:&|$)""")
 
     fun normalized(text: String): String = text.lowercase(java.util.Locale.ROOT)
