@@ -6,6 +6,7 @@ on:
     paths:
       - app/**
       - tools/*performance*.py
+      - tools/profile_android.py
       - tools/profile_android.sh
       - .github/workflows/performance.yml
 permissions:
@@ -31,15 +32,14 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n1)"
             "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
           fi
-      - name: Prepare unchanged v2.7 sources with the same test harness
+      - name: Extract unchanged v2.7 sources
         run: |
           mkdir -p "$RUNNER_TEMP/nspu-v2.7"
           git archive v2.7 | tar -x -C "$RUNNER_TEMP/nspu-v2.7"
-          python3 tools/prepare_performance_baseline.py "$RUNNER_TEMP/nspu-v2.7"
-      - name: Assemble current and baseline APKs and test APKs
+      - name: Assemble current and baseline APKs plus fixture seeder
         run: |
-          gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-          gradle --no-daemon -p "$RUNNER_TEMP/nspu-v2.7" :app:assembleDebug :app:assembleDebugAndroidTest
+          gradle --no-daemon :app:assembleDebug :app:assembleFixture
+          gradle --no-daemon -p "$RUNNER_TEMP/nspu-v2.7" :app:assembleDebug
       - name: Allow KVM hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -53,9 +53,7 @@ jobs:
           arch: x86_64
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            bash tools/profile_android.sh "$RUNNER_TEMP/nspu-v2.7/app/build/outputs/apk/debug/app-debug.apk" "$RUNNER_TEMP/nspu-v2.7/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" performance-results/v2.7 false
-            bash tools/profile_android.sh app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk performance-results/v2.8 true
+          script: bash tools/profile_android.sh app/build/outputs/apk/fixture/app-fixture.apk "$RUNNER_TEMP/nspu-v2.7/app/build/outputs/apk/debug/app-debug.apk" app/build/outputs/apk/debug/app-debug.apk performance-results
       - name: Summarize measured frames
         if: always()
         run: |

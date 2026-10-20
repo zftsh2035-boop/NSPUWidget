@@ -5,7 +5,6 @@ android {
     defaultConfig {
         applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35
         versionCode = 20; versionName = "2.8"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: "unknown"}\"")
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -32,7 +31,6 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            testProguardFile("proguard-test-rules.pro")
         }
         getByName("release") {
             isMinifyEnabled = true
@@ -42,14 +40,19 @@ android {
                 signingConfig = signingConfigs.getByName("production")
             }
         }
+        // Used only to copy deterministic fixtures into a disposable emulator before
+        // installing the exact optimized APK. Never published to users.
+        create("fixture") {
+            initWith(getByName("debug"))
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 }
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core-ktx:1.15.0")
