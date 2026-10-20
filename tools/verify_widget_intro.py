@@ -88,6 +88,9 @@ def main():
         set_value(settings, 'widget_intro_seen', 'false', 'boolean')
         put_pref('app-settings', settings)
         adb('install', '-r', args.current_apk)
+        # The fixture replacement broadcasts can arrive after adb install returns
+        # on a freshly booted API 29 image and kill an Activity launched immediately.
+        time.sleep(6)
         adb('logcat', '-c')
         verify(args.output)
     except Exception:

@@ -10,6 +10,7 @@ on:
       - tools/verify_favorites.py
       - tools/verify_notes.py
       - tools/verify_widget_intro.py
+      - tools/verify_features.py
       - tools/*performance*.py
       - tools/profile_android.py
       - tools/profile_android.sh
@@ -62,9 +63,7 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            python3 tools/verify_widget_intro.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk performance-results/widget-intro
-            python3 tools/verify_notes.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk tools/widget-host/build/outputs/apk/debug/*-debug.apk performance-results/notes
-            python3 tools/verify_favorites.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk tools/widget-host/build/outputs/apk/debug/*-debug.apk performance-results/favorites
+            python3 tools/verify_features.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk tools/widget-host/build/outputs/apk/debug/*-debug.apk performance-results
             bash tools/profile_android.sh app/build/outputs/apk/fixture/app-fixture.apk "$RUNNER_TEMP/nspu-baseline/app/build/outputs/apk/debug/app-debug.apk" app/build/outputs/apk/debug/app-debug.apk performance-results
       - name: Summarize measured frames
         if: always()
