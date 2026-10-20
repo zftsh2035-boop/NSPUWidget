@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 import shlex
 import sqlite3
 import tempfile
@@ -127,7 +128,31 @@ def verify(out):
     after = wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре').get('text')
     assert before != after and after.startswith('15 '), 'Calendar did not select the requested day'
     save_ui(out, 'next-month-selection')
-    (out / 'result.txt').write_text('PASS: real v1 migration, full note reader, day note, two persisted reminder times, OS alarm, single group chooser, next-month calendar\n')
+    # Browsing the horizontal strip must expose more than a fixed week without
+    # selecting dates through the parent's whole-page day-swipe gesture.
+    def date_chips():
+        return [n for n in dump().iter('node') if
+                re.match(r'^(пн|вт|ср|чт|пт|сб|вс) \d{1,2} ', n.get('text', ''))]
+    seen = {n.get('text') for n in date_chips()}
+    for _ in range(6):
+        chips = date_chips()
+        assert chips, 'Date strip disappeared'
+        left, upper, right, lower = bounds(chips[0])
+        adb('shell', 'input', 'swipe', 280, (upper + lower) // 2,
+            40, (upper + lower) // 2, 350)
+        seen.update(n.get('text') for n in date_chips())
+    assert len(seen) > 7, 'Date strip still exposes only one week'
+    assert wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре').get('text') == after, \
+        'Browsing the date strip unexpectedly selected a different day'
+    chips = date_chips()
+    # The widest visible label is fully on-screen, unlike a clipped edge chip.
+    chosen = max(chips, key=lambda n: bounds(n)[2] - bounds(n)[0])
+    chosen_day = re.search(r' (\d{1,2}) ', chosen.get('text')).group(1)
+    tap(chosen)
+    wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре' and
+              n.get('text') != after and n.get('text', '').startswith(chosen_day + ' '))
+    save_ui(out, 'free-date-strip-selection')
+    (out / 'result.txt').write_text('PASS: real v1 migration, full note reader, day note, two persisted reminder times, OS alarm, single group chooser, next-month calendar, date strip beyond one week\n')
     print('Planner upgrade and UI: PASS', flush=True)
 
 
