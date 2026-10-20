@@ -1,4 +1,6 @@
 """Black-box checks of the distributed APK with four groups and two actual AppWidgetHostViews."""
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import argparse
 import json
 from pathlib import Path
@@ -94,10 +96,17 @@ def verify(out):
     wait_node(lambda n: 'Предмет друга 1' in n.get('text', ''))
     save_ui(out, 'independent-groups')
     # A widget day change must leave both the compact widget and app selection intact.
+    initial_header = wait_node(lambda n: n.get('resource-id', '').endswith(':id/header')).get('text')
     tap(wait_node(lambda n: n.get('resource-id', '').endswith(':id/next')))
+    wait_node(lambda n: n.get('resource-id', '').endswith(':id/header') and n.get('text') != initial_header)
     compact_is(PRIMARY)
     adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
     text('ТВОЯ ГРУППА')
+    today = datetime.now(ZoneInfo('Asia/Novosibirsk')).date()
+    selected = today + timedelta(days=1) if today.weekday() == 6 else today
+    months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+    weekdays = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье']
+    text(f'{selected.day} {months[selected.month - 1]}, {weekdays[selected.weekday()]}')
     tap(favorites_button())
     tap(text(CODES[2]))
     wait_node(lambda n: 'Предмет друга 3' in n.get('text', ''))
@@ -116,6 +125,9 @@ def verify(out):
     text('● Friend3')
     save_ui(out, 'renamed-favorites')
     tap(text('Закрыть'))
+    tap(favorites_button())
+    tap(text(PRIMARY))
+    wait_node(lambda n: n.get('text', '').startswith('Алгебра '))
     # App switching and renaming must not silently switch either widget.
     start_host()
     full_is(CODES[0])
@@ -129,6 +141,7 @@ def verify(out):
     subject = wait_node(lambda n: 'Предмет друга 3' in n.get('text', '') and
                         n.get('resource-id', '').endswith(':id/lessonSubject'))
     tap(subject)
+    wait_node(lambda n: 'Предмет друга 3' in n.get('text', ''))
     wait_node(lambda n: n.get('text', '').startswith(('Осталось ', 'Через ')))
     tap(favorites_button())
     tap(text(PRIMARY))

@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
             if (Store.cached(applicationContext).isEmpty() || Store.missingScheduleLinks(applicationContext)) {
                 Sync.now(applicationContext)
             }
+            // Refresh existing launcher instances immediately after an APK upgrade.
+            ScheduleWidget.renderAll(applicationContext)
         }
         handleWidgetIntent(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -384,7 +386,6 @@ class MainActivity : ComponentActivity() {
                         val direction = DaySwipe.direction(draggedPx, 64.dp.toPx())
                         if (direction != 0) {
                             Store.offset(this@MainActivity, direction)
-                            refreshWidgets()
                             rerender++
                         }
                         draggedPx = 0f
@@ -410,6 +411,7 @@ class MainActivity : ComponentActivity() {
                                 Column(Modifier.weight(1f)) {
                                     Text(home.favorites.firstOrNull { it.id == home.groupId }?.displayName
                                         ?: group.substringBefore(" "), fontSize = 24.sp,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer)
                                     Text(group, maxLines = 2,
@@ -443,7 +445,6 @@ class MainActivity : ComponentActivity() {
                                 if (active) Button(
                                     onClick = {
                                         Store.jump(this@MainActivity, daysFromToday)
-                                        refreshWidgets()
                                         rerender++
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -451,7 +452,6 @@ class MainActivity : ComponentActivity() {
                                 else OutlinedButton(
                                     onClick = {
                                         Store.jump(this@MainActivity, daysFromToday)
-                                        refreshWidgets()
                                         rerender++
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)

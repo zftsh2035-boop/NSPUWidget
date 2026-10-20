@@ -10,7 +10,8 @@ internal object WidgetSettings {
         val saved = p.getInt("group_id", -1)
         if (Favorites.find(c, saved) != null) return saved
         val fallback = Favorites.primaryId(c)
-        p.edit().putInt("group_id", fallback).apply()
+        p.edit().putInt("group_id", fallback).remove("selected_date").remove("offset")
+            .putBoolean("picker", false).apply()
         return fallback
     }
     fun view(c: Context, id: Int) = ScheduleView(Store.data(c, groupId(c, id)), prefs(c, id))
