@@ -129,7 +129,7 @@ def top(width, height):
 
 
 def measure(out, screen, width, height):
-    for up in (True, True, False, False):
+    for up in [True] * 4 + [False] * 4:
         swipe(width, height, up)
     adb('shell', 'dumpsys', 'gfxinfo', PKG, 'reset')
     for up in [True] * 6 + [False] * 6:
@@ -144,6 +144,11 @@ def measure(out, screen, width, height):
 def run(apk, out, verify):
     out.mkdir(parents=True, exist_ok=True)
     adb('install', '-r', '-d', apk)
+    # Compare steady-state UI with equal ART compilation rather than different
+    # first-install JIT decisions. Cold/install performance is a separate metric.
+    compiled = adb('shell', 'cmd', 'package', 'compile', '-f', '-m', 'speed', PKG)
+    assert 'Success' in compiled, compiled
+    (out / 'compilation.txt').write_text(compiled)
     adb('logcat', '-c')
     try:
         launch = adb('shell', 'am', 'start', '-S', '-W', '-f', '0x10008000',
@@ -210,14 +215,16 @@ def main():
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
     try:
-        seed()
-        print('Measuring original v2.8', flush=True)
-        run(args.baseline_apk, args.output / 'v2.8', False)
-        adb('uninstall', PKG)
-        adb('install', '-r', args.fixture_apk)
-        seed()
-        print('Measuring current v2.9', flush=True)
-        run(args.current_apk, args.output / 'v2.9', True)
+        # ABBA order exposes host/emulator drift instead of attributing one noisy
+        # pair of measurements to an app change. Each trial starts from identical data.
+        trials = [('v2.8', args.baseline_apk, False), ('v2.9', args.current_apk, True),
+                  ('repeat-v2.9', args.current_apk, False), ('repeat-v2.8', args.baseline_apk, False)]
+        for label, apk, verify in trials:
+            adb('uninstall', PKG, check=False)
+            adb('install', '-r', args.fixture_apk)
+            seed()
+            print('Measuring ' + label, flush=True)
+            run(apk, args.output / label, verify)
     finally:
         adb('shell', 'svc', 'wifi', 'enable', check=False)
         adb('shell', 'svc', 'data', 'enable', check=False)

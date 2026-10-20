@@ -5,12 +5,13 @@ import sys
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else 'performance-results')
 lines = ['# Android 29: v2.8 / v2.9', '',
-         'Same emulator, seeded offline data, two warm-up gestures in each direction, then 12 measured swipes per screen. '
+         'Same emulator, seeded offline data, four warm-up gestures in each direction, then 12 measured swipes per screen. '
          'The home fixture has 32 lessons for stress testing; the teacher fixture has 48 lessons in the week. '
-         'These are emulator observations, not a physical-phone or battery benchmark.', '',
+         'Both APKs use ART speed compilation; ABBA order provides repeat trials. '
+         'These are steady-state emulator observations, not cold-install, physical-phone or battery measurements.', '',
          '| Version | Screen | Frames | Janky frames | P95 |',
          '|---|---|---:|---:|---:|']
-for version in ('v2.8', 'v2.9'):
+for version in ('v2.8', 'v2.9', 'repeat-v2.9', 'repeat-v2.8'):
     for screen in ('home', 'teacher'):
         path = root / version / f'{screen}-frames.txt'
         if not path.exists():
