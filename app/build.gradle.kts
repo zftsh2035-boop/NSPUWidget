@@ -32,6 +32,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            testProguardFile("proguard-test-rules.pro")
         }
         getByName("release") {
             isMinifyEnabled = true
@@ -49,7 +50,6 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.28.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core-ktx:1.15.0")
