@@ -40,7 +40,7 @@ def hide_keyboard():
 
 
 def save_note():
-    hide_keyboard()
+    # A real user must be able to save with the keyboard still open.
     tap(text('Сохранить'))
     wait_node(lambda n: n.get('content-desc') == 'Мои заметки')
 

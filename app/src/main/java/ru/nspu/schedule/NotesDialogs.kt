@@ -11,9 +11,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -43,39 +46,57 @@ internal fun NoteEditor(request: NoteEditorRequest, groupName: String, saving: B
         mutableStateOf(request.note?.text.orEmpty())
     }
     val tooLong = text.length > PersonalNote.MAX_LENGTH
-    AlertDialog(onDismissRequest = { if (!saving) onDismiss() },
-        title = { Text(if (request.note == null) "Заметка к паре" else "Личная заметка") },
-        text = {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(request.target.subject, fontWeight = FontWeight.Bold)
-                Text(request.target.date.format(noteDate) + " · " + request.target.time + "\n" + groupName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = text, onValueChange = { text = it },
-                    enabled = !saving, label = { Text("Заметка") },
-                    placeholder = { Text("Например, взять бинты") },
-                    modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 7,
-                    isError = tooLong || error.isNotBlank(), supportingText = {
-                        Text(when {
-                            error.isNotBlank() -> error
-                            tooLong -> "Максимум ${PersonalNote.MAX_LENGTH} символов"
-                            else -> "Видна в виджете. Только для этой пары."
-                        })
-                    })
-                if (request.note != null) TextButton(onClick = onDelete, enabled = !saving,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Text("Удалить заметку")
+    Dialog(onDismissRequest = { if (!saving) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false, dismissOnClickOutside = false)) {
+        // A bounded window keeps actions above the IME, including in landscape.
+        // Only the body scrolls; a long draft cannot push Save below the keyboard.
+        Box(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(16.dp),
+            contentAlignment = Alignment.Center) {
+            Surface(modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.weight(1f, fill = false).fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (request.note == null) "Заметка к паре" else "Личная заметка",
+                            style = MaterialTheme.typography.headlineSmall)
+                        Spacer(Modifier.height(4.dp))
+                        Text(request.target.subject, fontWeight = FontWeight.Bold)
+                        Text(request.target.date.format(noteDate) + " · " + request.target.time + "\n" + groupName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(value = text, onValueChange = { text = it },
+                            enabled = !saving, label = { Text("Заметка") },
+                            placeholder = { Text("Например, взять бинты") },
+                            modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 7,
+                            isError = tooLong || error.isNotBlank(), supportingText = {
+                                Text(when {
+                                    error.isNotBlank() -> error
+                                    tooLong -> "Максимум ${PersonalNote.MAX_LENGTH} символов"
+                                    else -> "Видна в виджете. Только для этой пары."
+                                })
+                            })
+                        if (request.note != null) TextButton(onClick = onDelete, enabled = !saving,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                            Text("Удалить заметку")
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onDismiss, enabled = !saving, modifier = Modifier.weight(1f)) {
+                            Text("Отмена")
+                        }
+                        TextButton(onClick = { onSave(text) }, modifier = Modifier.weight(1f),
+                            enabled = !saving && !tooLong && (request.note != null || text.isNotBlank())) {
+                            Text(if (saving) "Сохраняю…" else "Сохранить")
+                        }
+                    }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(text) }, enabled = !saving && !tooLong &&
-                (request.note != null || text.isNotBlank())) {
-                Text(if (saving) "Сохраняю…" else "Сохранить")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Отмена") } })
+        }
+    }
 }
 
 @Composable
