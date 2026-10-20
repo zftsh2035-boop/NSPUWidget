@@ -172,7 +172,7 @@ def verify(out):
     # This is the same documented Activity intent that launcher views send.
     from zoneinfo import ZoneInfo
     future = datetime.now(ZoneInfo('Asia/Novosibirsk')).date() + timedelta(days=7)
-    adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity',
+    adb('shell', 'am', 'start', '-W', '-f', '0x24000000', '-n', PKG + '/.MainActivity',
         '--ei', 'open_group_id', 3328, '--ez', 'open_note', 'true',
         '--es', 'note_date', str(future), '--es', 'note_subject', shlex.quote(subject),
         '--es', 'note_time', '8:30-10:00', '--es', 'note_kind', 'ПРАКТИКА', '--es', 'note_subgroup', 'all')
