@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var scheduleRevision by mutableIntStateOf(0)
     private var screenActive by mutableStateOf(false)
     private var navigationRequest by mutableLongStateOf(0L)
+    private var handledNavigation = 0L
     private var incomingNote: NoteEditorRequest? = null
     private var offerWidgetIntro by mutableStateOf(false)
     private val scheduleKeys = setOf("lessons", "notices", "updated", "error", "change_history",
@@ -300,18 +301,21 @@ class MainActivity : ComponentActivity() {
                 else -> 0
             })
         }
-        var handledNavigation by androidx.compose.runtime.saveable.rememberSaveable { mutableLongStateOf(0L) }
         LaunchedEffect(navigationRequest) {
             if (navigationRequest > 0 && handledNavigation != navigationRequest) {
                 handledNavigation = navigationRequest
+                // A launcher intent is an event. Do not replay its editor when
+                // the home composition is rebuilt for another group.
+                val noteRequest = incomingNote
+                incomingNote = null
                 selectedTab = if (intent.getBooleanExtra("show_notices", false)) 1 else 0
                 favoritePicker = intent.getBooleanExtra("show_favorites", false)
-                editingNote = incomingNote
+                editingNote = noteRequest
                 noteError = ""
                 notesVisible = false
                 widgetHelp = false
                 offerWidgetIntro = false
-                pendingFocusGroup = if (incomingNote == null)
+                pendingFocusGroup = if (noteRequest == null)
                     intent.getIntExtra("open_group_id", -1).takeIf { it > 0 } else null
             }
         }

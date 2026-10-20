@@ -48,6 +48,21 @@ def save_note():
 def cancel_note():
     hide_keyboard()
     tap(text('Отмена'))
+    wait_node(lambda n: n.get('content-desc') == 'Мои заметки')
+    assert not any(n.get('class') == 'android.widget.EditText' for n in dump().iter('node')), \
+        'Cancel left the note editor open'
+
+
+def find_lesson_note_button(subject):
+    # Switching a favorite deliberately jumps to the live lesson. The clock can
+    # cross a class boundary during this test, so find the original class above it.
+    for _ in range(12):
+        found = next((n for n in dump().iter('node') if
+                      n.get('content-desc', '').startswith('Добавить заметку: ' + subject + ', ')), None)
+        if found is not None:
+            return found
+        adb('shell', 'input', 'swipe', 160, 240, 160, 500, 350)
+    raise AssertionError('Could not reach the original lesson in the friend schedule')
 
 
 def note_text(value, compact=False):
@@ -183,7 +198,8 @@ def verify(out):
     # Equal subjects in a different group still get independent personal notes.
     tap(favorites_button())
     tap(text(CODES[0]))
-    tap(wait_node(lambda n: n.get('content-desc', '').startswith('Добавить заметку: ' + subject + ', ')))
+    tap(find_lesson_note_button(subject))
+    text(CODES[0])
     assert field().get('text', '') == '', 'Note leaked into another group'
     type_note('Friend notebook')
     save_note()
