@@ -156,11 +156,17 @@ def run(apk, out, verify):
         (out / 'home.xml').write_text(ET.tostring(dump(), encoding='unicode'))
         if verify:
             assert not any('↗' in n.get('text', '') for n in dump().iter('node')), 'Arrow remains in lesson card'
-            badge = wait_node(lambda n: n.get('content-desc') == 'Аудитория 411')
+            root = dump()
+            badge = next(n for n in root.iter('node') if n.get('content-desc') == 'Аудитория 411')
             left, upper, right, bottom = bounds(badge)
             assert abs((right - left) - (bottom - upper)) <= 3, f'Badge must be square: {badge.attrib}'
             assert (left + right) / 2 > width * .65, 'Badge must be on the right'
-            assert badge.get('clickable') == 'true', 'Badge must be clickable'
+            # Material Surface exposes the label beneath its clickable accessibility node.
+            parents = {child: parent for parent in root.iter() for child in parent}
+            target = badge
+            while target.get('clickable') != 'true' and target in parents:
+                target = parents[target]
+            assert target.get('clickable') == 'true', 'Badge has no clickable target'
             tap(badge)
             text('Расписание аудитории')
             text('Алгебра 1')
