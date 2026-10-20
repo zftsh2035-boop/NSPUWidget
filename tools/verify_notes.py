@@ -175,7 +175,11 @@ def verify(out):
     hide_keyboard()
     adb('shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0')
     adb('shell', 'settings', 'put', 'system', 'user_rotation', '1')
-    wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
+    # Wait for a real landscape window, rather than matching the old portrait
+    # field before recreation. The IME may reopen and cover the landscape body.
+    wait_node(lambda n: n.get('class') == 'android.widget.FrameLayout' and
+              int(re.findall(r'\d+', n['bounds'])[2]) - int(re.findall(r'\d+', n['bounds'])[0]) >
+              int(re.findall(r'\d+', n['bounds'])[3]) - int(re.findall(r'\d+', n['bounds'])[1]))
     adb('shell', 'settings', 'put', 'system', 'user_rotation', '0')
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
     cancel_note()
