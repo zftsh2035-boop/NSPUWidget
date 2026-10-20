@@ -23,11 +23,11 @@ internal val NoteEditorRequestSaver = listSaver<NoteEditorRequest?, String>(
         val target = it.target
         listOf(target.groupId.toString(), target.date.toString(), target.subject, target.time,
             target.kind, target.subgroup, it.note?.id.orEmpty(), it.note?.text.orEmpty(),
-            (it.note?.updatedAt ?: 0L).toString())
+            (it.note?.updatedAt ?: 0L).toString(), target.uniqueOnDay.toString())
     }.orEmpty() },
     restore = { values -> if (values.isEmpty()) null else {
         val target = NoteTarget(values[0].toInt(), LocalDate.parse(values[1]), values[2],
-            values[3], values[4], values[5])
+            values[3], values[4], values[5], values.getOrNull(9) == "true")
         NoteEditorRequest(target, values[6].takeIf { it.isNotEmpty() }?.let {
             PersonalNote(it, target, values[7], values[8].toLong())
         })

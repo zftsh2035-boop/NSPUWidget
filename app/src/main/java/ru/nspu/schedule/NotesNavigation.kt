@@ -10,6 +10,7 @@ internal object NotesNavigation {
         .putExtra("note_date", target.date.toString()).putExtra("note_subject", target.subject)
         .putExtra("note_time", target.time).putExtra("note_kind", target.kind)
         .putExtra("note_subgroup", target.subgroup)
+        .putExtra("note_unique", target.uniqueOnDay)
 
     /** Re-read on IO, so an old launcher view never resurrects deleted or edited text. */
     fun read(c: Context, intent: Intent): NoteEditorRequest? {
@@ -21,7 +22,8 @@ internal object NotesNavigation {
         val time = intent.getStringExtra("note_time")?.takeIf { it.length <= 32 } ?: return null
         val kind = intent.getStringExtra("note_kind")?.take(80) ?: return null
         val subgroup = intent.getStringExtra("note_subgroup")?.take(80) ?: return null
-        val target = NoteTarget(groupId, date, subject, time, kind, subgroup)
+        val target = NoteTarget(groupId, date, subject, time, kind, subgroup,
+            intent.getBooleanExtra("note_unique", false))
         val note = intent.getStringExtra("note_id")?.let { Notes.find(c, it) }
             ?.takeIf { it.target.identity == target.identity }
             ?: Notes.forDay(c, groupId, date).singleOrNull { it.target.slot == target.slot }

@@ -52,6 +52,7 @@ internal object Notes {
                 put("lesson_time", target.time)
                 put("kind", target.kind)
                 put("subgroup", target.subgroup)
+                put("unique_on_day", if (target.uniqueOnDay) 1 else 0)
                 put("text", text)
                 put("updated_at", System.currentTimeMillis())
             }
@@ -71,7 +72,8 @@ internal object Notes {
         NoteTarget(getInt(getColumnIndexOrThrow("group_id")),
             LocalDate.parse(getString(getColumnIndexOrThrow("lesson_date"))),
             getString(getColumnIndexOrThrow("subject")), getString(getColumnIndexOrThrow("lesson_time")),
-            getString(getColumnIndexOrThrow("kind")), getString(getColumnIndexOrThrow("subgroup"))),
+            getString(getColumnIndexOrThrow("kind")), getString(getColumnIndexOrThrow("subgroup")),
+            getInt(getColumnIndexOrThrow("unique_on_day")) == 1),
         getString(getColumnIndexOrThrow("text")), getLong(getColumnIndexOrThrow("updated_at")))
 
     private class Database(c: Context) : SQLiteOpenHelper(c, "personal-notes.db", null, 1) {
@@ -80,7 +82,8 @@ internal object Notes {
                 id TEXT PRIMARY KEY NOT NULL,
                 group_id INTEGER NOT NULL, lesson_date TEXT NOT NULL,
                 subject TEXT NOT NULL, subject_key TEXT NOT NULL, lesson_time TEXT NOT NULL,
-                kind TEXT NOT NULL, subgroup TEXT NOT NULL, text TEXT NOT NULL, updated_at INTEGER NOT NULL,
+                kind TEXT NOT NULL, subgroup TEXT NOT NULL, unique_on_day INTEGER NOT NULL,
+                text TEXT NOT NULL, updated_at INTEGER NOT NULL,
                 UNIQUE(group_id, lesson_date, subject_key, lesson_time, kind, subgroup)
             )""")
             db.execSQL("CREATE INDEX notes_by_day ON notes(group_id, lesson_date)")

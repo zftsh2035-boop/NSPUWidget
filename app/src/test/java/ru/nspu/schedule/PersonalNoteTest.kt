@@ -49,6 +49,22 @@ class PersonalNoteTest {
         assertEquals(note, match(target, notes = listOf(note, other))[target])
     }
 
+    @Test fun cancellingOneOfTwoLessonsDoesNotMoveItsNoteToTheOther() {
+        val first = Lesson(1, "8:30-10:00", "Алгебра, Петров И. И., (п.з.: 1-16 нед.), а. 411")
+        val second = first.copy(time = "10:20-11:50")
+        val cards = prepareLessonCards(3328, date, listOf(first, second), date.minusWeeks(6),
+            ScheduleLinks.Index(emptyList()), emptyList())
+        val savedTarget = cards.getValue(first).noteTarget!!
+        assertFalse(savedTarget.uniqueOnDay)
+        val survivor = cards.getValue(second).noteTarget!!.copy(uniqueOnDay = true)
+        assertTrue(match(survivor, notes = listOf(note.copy(target = savedTarget))).isEmpty())
+    }
+
+    @Test fun classroomNamedA7IsNotALanguageSubgroup() {
+        assertEquals("all", SiteParser.subgroupKey(Lesson(1, target.time, "Алгебра, Петров, а. А7")))
+        assertEquals("7", SiteParser.subgroupKey(Lesson(1, target.time, "Иностранный язык, А7, Норов, а. А8")))
+    }
+
     @Test fun typographyAndLeadingZeroDoNotDuplicateAnOccurrence() {
         val formatted = target.copy(subject = "  АЛГЕБРА  ", time = "08:30–10:00")
         assertEquals(target.slot, formatted.slot)

@@ -12,7 +12,8 @@ internal data class NoteTarget(
     val subject: String,
     val time: String,
     val kind: String,
-    val subgroup: String
+    val subgroup: String,
+    val uniqueOnDay: Boolean = true
 ) {
     val subjectKey = normalize(subject)
     val identity = listOf(groupId.toString(), date.toString(), subjectKey, kind, subgroup)
@@ -51,7 +52,8 @@ internal object NoteMatching {
         return targets.mapNotNull { target ->
             val candidates = notesByIdentity[target.identity].orEmpty()
             val exact = candidates.singleOrNull { it.target.slot == target.slot }
-            val moved = if (occurrences[target.identity] == 1) candidates.singleOrNull() else null
+            val moved = if (occurrences[target.identity] == 1)
+                candidates.singleOrNull()?.takeIf { it.target.uniqueOnDay } else null
             (exact ?: moved)?.let { target to it }
         }.toMap()
     }
@@ -61,7 +63,9 @@ internal object NoteMatching {
 internal fun prepareLessonCards(groupId: Int, date: LocalDate, lessons: List<Lesson>,
     termStart: LocalDate, links: ScheduleLinks.Index, notes: List<PersonalNote>): Map<Lesson, LessonPresentation> {
     val cards = lessons.map { it.present(date, termStart, links) }
-    val targets = cards.map { NoteTarget.of(groupId, it) }
+    val initialTargets = cards.map { NoteTarget.of(groupId, it) }
+    val counts = initialTargets.groupingBy { it.identity }.eachCount()
+    val targets = initialTargets.map { it.copy(uniqueOnDay = counts[it.identity] == 1) }
     val matches = NoteMatching.resolve(targets, notes)
     return cards.zip(targets).associate { (card, target) ->
         card.lesson to card.copy(noteTarget = target, note = matches[target])

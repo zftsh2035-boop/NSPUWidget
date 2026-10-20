@@ -142,9 +142,13 @@ object SiteParser {
         return "${l.day}|${l.time}|$name|$subgroup"
     }
 
-    fun subgroupKey(l: Lesson): String = subgroupPattern.findAll(l.raw)
-        .map { it.groupValues[1].toInt() }.distinct().sorted().joinToString(",")
-        .ifEmpty { if (l.raw.contains("Немецкий язык", true)) "de" else "all" }
+    fun subgroupKey(l: Lesson): String {
+        if (!languagePattern.containsMatchIn(l.raw.substringBefore(','))) return "all"
+        val withoutRoom = roomPattern.find(l.raw)?.range?.first?.let { l.raw.take(it) } ?: l.raw
+        return subgroupPattern.findAll(withoutRoom).map { it.groupValues[1].toInt() }
+            .distinct().sorted().joinToString(",")
+            .ifEmpty { if (l.raw.contains("Немецкий язык", true)) "de" else "all" }
+    }
 
     /** Arbitrary notices have no reliable expiry rule. The site controls visibility. */
     @Suppress("UNUSED_PARAMETER")
