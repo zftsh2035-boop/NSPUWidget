@@ -44,3 +44,10 @@ Signing limitation:
 The downloaded v2.10 APK uses a different certificate from the new permanent key. The old private key is unavailable; generating a new permanent key cannot restore in-place compatibility with v2.10. The SQL migration preserves notes only when Android retains the app's data. Release notes explicitly ask users to copy their notes before removing the old application.
 
 Local debug, release and fixture APKs were built using the new permanent key and verified to have the same SHA-256 signing certificate: `03d2e0e96610346495a76abd60dc9e3dc4f968f457898426e3326183dd9cd85b`. Signing material is outside the repository. CI accepts one protected `NSPU_SIGNING_BUNDLE` JSON secret (or the existing four-secret format); stable builds fail rather than publish with a temporary key. Four signing-configuration tests passed. GitHub secret entry and a CI-signed build are still required.
+
+Latest runs on `faa4e982d6aa7d160e8c392f53caea05db738432`:
+
+- Build and unit/live-parser checks passed (`39476466189`).
+- Android 10: complete notes, planner and favorites scenarios passed (`39476466198`). Pinning automation selected the non-clickable dialog title, leaving the native confirmation open; screenshot/XML confirmed the wrong tap. Require a clickable confirmation button.
+- Android 15: native pinning, planner and favorites passed (`39476466212`, attempt 2). Notes verified long text and both widget links, then expected the normal compact layout in a host whose padding left less than the 170dp responsive breakpoint. The screenshot showed the valid tiny layout with room 411 inline. Request a 200dp host to exercise the normal layout, retaining the room and full-note assertions.
+- Both corrected scenarios still require a new emulator run. No performance claim is made while the feature gate prevents measurements.

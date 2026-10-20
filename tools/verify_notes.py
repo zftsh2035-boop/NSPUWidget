@@ -194,7 +194,9 @@ def verify(out):
     tiny_height = bounds(root)[3] - bounds(root)[1]
     # am start can merely bring an existing standard-mode task to the front,
     # leaving extras untouched. Restart the host explicitly for this resize.
-    adb('shell', 'am', 'start', '-S', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 180)
+    # Modern AppWidgetHostView subtracts its default padding before choosing a
+    # responsive layout. 200dp leaves room for the 170dp normal compact layout.
+    adb('shell', 'am', 'start', '-S', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 200)
     wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoot') and
               int(re.findall(r'\d+', n['bounds'])[3]) - int(re.findall(r'\d+', n['bounds'])[1]) > tiny_height * 1.3)
     wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoom') and '411' in n.get('text', ''))

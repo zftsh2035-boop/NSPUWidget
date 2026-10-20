@@ -48,7 +48,8 @@ def verify(out):
         result = 'PASS: first launch, persistent Later, settings re-entry, manual fallback (launcher declined pinning)'
     else:
         save_ui(out, 'native-pin-confirmation')
-        button = wait_node(lambda n: n.get('package') != PKG and n.get('text', '').lower() in (
+        button = wait_node(lambda n: n.get('package') != PKG and
+            n.get('clickable') == 'true' and n.get('text', '').lower() in (
             'add automatically', 'добавить автоматически', 'add', 'добавить',
             'add to home screen', 'добавить на главный экран'))
         tap(button)
