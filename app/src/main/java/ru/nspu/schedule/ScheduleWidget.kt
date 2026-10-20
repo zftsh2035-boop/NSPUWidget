@@ -13,51 +13,131 @@ import android.view.View
 import android.widget.RemoteViews
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class ScheduleWidget : AppWidgetProvider() {
-    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+    private fun background(block: () -> Unit) {
+        val pending = goAsync()
+        scope.launch {
+            try { block() }
+            catch (e: Exception) { android.util.Log.e("NSPUWidget", "Widget action failed", e) }
+            finally { pending.finish() }
+        }
+    }
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = background {
+        Store.initialize(context)
         Sync.schedule(context)
-        if (Store.cached(context).isEmpty()) Sync.now(context)
-        ids.forEach { render(context, manager, it) }
-        if (ids.isNotEmpty()) FocusClock.schedule(context)
+        ids.forEach { id ->
+            val data = Store.data(context, WidgetSettings.groupId(context, id))
+            if (data.cached().isEmpty()) Sync.now(context, data.id)
+            render(context, manager, id)
+        }
+        FocusClock.schedule(context)
+    }
+    override fun onDeleted(context: Context, ids: IntArray) = background {
+        ids.forEach { WidgetSettings.delete(context, it) }
+        FocusClock.schedule(context)
     }
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager,
-        appWidgetId: Int, newOptions: Bundle) {
-        super.onAppWidgetOptionsChanged(context, manager, appWidgetId, newOptions)
-        render(context, manager, appWidgetId)
-    }
+        appWidgetId: Int, newOptions: Bundle) = background { render(context, manager, appWidgetId) }
 
     override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
         if (intent.action == Intent.ACTION_CONFIGURATION_CHANGED) {
-            renderAll(context)
+            background { renderAll(context) }
             return
         }
         if (intent.action == "ru.nspu.schedule.NAV") {
-            when (intent.getStringExtra("cmd")) {
-                "prev" -> Store.offset(context, -1)
-                "next" -> Store.offset(context, 1)
-                "today" -> Store.resetDate(context)
-                "refresh" -> Sync.now(context)
-                "dismiss" -> Store.dismissWidgetNotice(context, intent.getStringExtra("notice_id") ?: "")
+            val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
+            if (id < 0) return
+            background {
+                val manager = AppWidgetManager.getInstance(context)
+                if (id !in manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java)))
+                    return@background
+                val view = WidgetSettings.view(context, id)
+                when (intent.getStringExtra("cmd")) {
+                    "prev" -> view.offset(-1)
+                    "next" -> view.offset(1)
+                    "today" -> view.selectDate(java.time.LocalDate.now(ZONE))
+                    "refresh" -> Sync.now(context, view.data.id)
+                    "dismiss" -> view.data.dismissWidgetNotice(intent.getStringExtra("notice_id") ?: "")
+                    "groups" -> WidgetSettings.setPicker(context, id, true)
+                    "close" -> WidgetSettings.setPicker(context, id, false)
+                    "select" -> {
+                        WidgetSettings.select(context, id, intent.getIntExtra("favorite_id", -1))
+                        val selected = Store.data(context, WidgetSettings.groupId(context, id))
+                        if (selected.cached().isEmpty()) Sync.now(context, selected.id)
+                    }
+                }
+                render(context, manager, id)
+                FocusClock.schedule(context)
             }
-            renderAll(context)
+            return
         }
+        super.onReceive(context, intent)
     }
     companion object {
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         fun renderAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java))
             ids.forEach { render(context, manager, it) }
             if (ids.isNotEmpty()) FocusClock.schedule(context)
         }
-        private fun action(context: Context, code: Int, cmd: String): PendingIntent {
+        fun renderGroup(context: Context, groupId: Int) {
+            val manager = AppWidgetManager.getInstance(context)
+            manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java))
+                .filter { WidgetSettings.groupId(context, it) == groupId }
+                .forEach { render(context, manager, it) }
+            FocusClock.schedule(context)
+        }
+        private fun action(context: Context, widgetId: Int, cmd: String,
+            mutable: Boolean = false, extra: Intent.() -> Unit = {}): PendingIntent {
             val intent = Intent(context, ScheduleWidget::class.java)
-                .setAction("ru.nspu.schedule.NAV").putExtra("cmd", cmd)
-            return PendingIntent.getBroadcast(context, code, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                .setAction("ru.nspu.schedule.NAV")
+                .setData(Uri.parse("nspuwidget://action/$widgetId/$cmd"))
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId).putExtra("cmd", cmd).apply(extra)
+            return PendingIntent.getBroadcast(context, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
+        }
+        private fun open(context: Context, widgetId: Int, groupId: Int,
+            notices: Boolean = false, favorites: Boolean = false, mutable: Boolean = false): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java)
+                .setData(Uri.parse("nspuwidget://open/$widgetId/$groupId/$notices/$favorites"))
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("open_group_id", groupId).putExtra("show_notices", notices)
+                .putExtra("show_favorites", favorites)
+            return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
+        }
+        private fun renderPicker(context: Context, manager: AppWidgetManager, widgetId: Int) {
+            val colors = WidgetTheme.palette(context)
+            val v = RemoteViews(context.packageName, R.layout.widget_groups)
+            v.setInt(R.id.widgetRoot, "setBackgroundResource", colors.panel)
+            v.setTextColor(R.id.groupsTitle, colors.ink)
+            v.setTextColor(R.id.groupsClose, colors.accent)
+            v.setTextColor(R.id.manageFavorites, colors.accent)
+            v.setOnClickPendingIntent(R.id.groupsClose, action(context, widgetId, "close"))
+            v.setOnClickPendingIntent(R.id.manageFavorites,
+                open(context, widgetId, WidgetSettings.groupId(context, widgetId), favorites = true))
+            v.setRemoteAdapter(R.id.favoriteList, Intent(context, FavoriteListService::class.java)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                .setData(Uri.parse("nspuwidget://favorites/$widgetId")))
+            v.setPendingIntentTemplate(R.id.favoriteList, action(context, widgetId, "select", mutable = true))
+            manager.updateAppWidget(widgetId, v)
+            manager.notifyAppWidgetViewDataChanged(widgetId, R.id.favoriteList)
         }
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
+            if (WidgetSettings.pickerOpen(context, widgetId)) {
+                renderPicker(context, manager, widgetId)
+                return
+            }
+            val view = WidgetSettings.view(context, widgetId)
+            val data = view.data
+            val favorite = Favorites.find(context, data.id)
             val options = manager.getAppWidgetOptions(widgetId)
             val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
                 .takeIf { it > 0 } ?: 300
@@ -78,12 +158,11 @@ class ScheduleWidget : AppWidgetProvider() {
                 v.setTextColor(R.id.compactTeacher, widgetPalette.body)
                 v.setTextColor(R.id.compactTime, widgetPalette.accent)
                 v.setTextColor(R.id.compactRoom, widgetPalette.room)
-                val focus = Store.focus(context)
+                val focus = data.focus()
                 v.setTextViewText(R.id.compactHeader,
-                    if (tiny) Store.scheduleGroupCode(context)
-                    else "НГПУ · " + Store.scheduleGroupCode(context))
+                    favorite?.displayName ?: data.scheduleGroupCode())
                 if (focus != null) {
-                    val d = SiteParser.details(focus.lesson, focus.date, Store.termStart(context))
+                    val d = SiteParser.details(focus.lesson, focus.date, data.termStart())
                     v.setTextViewText(R.id.compactSubject, d.subject)
                     v.setTextViewText(R.id.compactTeacher, d.teacher)
                     v.setTextViewText(R.id.compactTime, if (focus.ongoing)
@@ -102,10 +181,9 @@ class ScheduleWidget : AppWidgetProvider() {
                     v.setTextViewText(R.id.compactKind, "")
                     v.setTextViewText(R.id.compactRoom, "")
                 }
-                val open = PendingIntent.getActivity(context, 10,
-                    Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                v.setOnClickPendingIntent(R.id.compactRoot, open)
+                v.setOnClickPendingIntent(R.id.compactRoot, open(context, widgetId, data.id))
+                v.setTextColor(R.id.groups, widgetPalette.accent)
+                v.setOnClickPendingIntent(R.id.groups, action(context, widgetId, "groups"))
                 manager.updateAppWidget(widgetId, v)
                 return
             }
@@ -125,29 +203,25 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setTextColor(R.id.status, widgetPalette.muted)
             v.setTextColor(R.id.today, widgetPalette.accent)
             v.setTextColor(R.id.refresh, widgetPalette.accent)
-            val date = Store.date(context)
+            val date = view.date()
             val name = if (date.dayOfWeek.value in 1..6) DAYS[date.dayOfWeek.value - 1] else "Воскресенье"
             v.setTextViewText(R.id.header,
                 "$name, " + date.format(DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("ru-RU"))))
             v.setTextViewText(R.id.subtitle,
-                "Группа " + Store.scheduleGroupCode(context) + " · неделя " + Store.week(context, date) + " · " + Store.group(context))
-            val notices = Store.widgetNotices(context)
+                (favorite?.displayName ?: data.scheduleGroupCode()) + " · неделя " + data.week(date) + " · " + data.group())
+            val notices = data.widgetNotices()
             val newest = notices.firstOrNull { it.isNew } ?: notices.firstOrNull()
             if (newest != null && !medium) {
                 v.setViewVisibility(R.id.noticeBox, View.VISIBLE)
                 v.setTextViewText(R.id.noticeLabel, if (newest.isNew) "● НОВОЕ ОБЪЯВЛЕНИЕ" else "ОБЪЯВЛЕНИЕ НГПУ")
                 v.setTextViewText(R.id.noticeText, newest.text)
-                val dismiss = Intent(context, ScheduleWidget::class.java)
-                    .setAction("ru.nspu.schedule.NAV")
-                    .putExtra("cmd", "dismiss").putExtra("notice_id", newest.id)
-                v.setOnClickPendingIntent(R.id.noticeDismiss, PendingIntent.getBroadcast(context,
-                    100 + widgetId, dismiss,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                v.setOnClickPendingIntent(R.id.noticeDismiss,
+                    action(context, widgetId, "dismiss") { putExtra("notice_id", newest.id) })
                 v.setTextViewText(R.id.noticeMeta,
                     if (notices.size > 1) "Ещё " + (notices.size - 1) + " · открыть" else "Нажми, чтобы прочитать")
             } else v.setViewVisibility(R.id.noticeBox, View.GONE)
 
-            val lessons = Store.forDate(context, date)
+            val lessons = data.forDate(date)
             val n = lessons.size
             val pairWord = when {
                 n % 100 in 11..14 -> "пар"
@@ -162,21 +236,19 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setRemoteAdapter(R.id.lessonList, service)
             v.setEmptyView(R.id.lessonList, R.id.emptyState)
             v.setTextViewText(R.id.emptyState,
-                if (Store.cached(context).isEmpty()) "Расписание загружается…" else "Пар на этот день нет")
-            val status = if (Store.error(context).isNotBlank()) "Офлайн · сохранённая версия"
-                else "Обновлено " + Store.status(context)
+                if (data.cached().isEmpty()) "Расписание загружается…" else "Пар на этот день нет")
+            val status = if (data.error().isNotBlank()) "Офлайн · сохранённая версия"
+                else "Обновлено " + data.status()
             v.setTextViewText(R.id.status, status)
-            v.setOnClickPendingIntent(R.id.prev, action(context, 1, "prev"))
-            v.setOnClickPendingIntent(R.id.next, action(context, 2, "next"))
-            v.setOnClickPendingIntent(R.id.today, action(context, 3, "today"))
-            v.setOnClickPendingIntent(R.id.refresh, action(context, 4, "refresh"))
-            val open = PendingIntent.getActivity(context, 10,
-                Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-            v.setOnClickPendingIntent(R.id.header, open)
-            v.setPendingIntentTemplate(R.id.lessonList, open)
-            v.setOnClickPendingIntent(R.id.noticeBox, PendingIntent.getActivity(context, 11,
-                Intent(context, MainActivity::class.java).putExtra("show_notices", true),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            v.setOnClickPendingIntent(R.id.prev, action(context, widgetId, "prev"))
+            v.setOnClickPendingIntent(R.id.next, action(context, widgetId, "next"))
+            v.setOnClickPendingIntent(R.id.today, action(context, widgetId, "today"))
+            v.setOnClickPendingIntent(R.id.refresh, action(context, widgetId, "refresh"))
+            v.setTextColor(R.id.groups, widgetPalette.accent)
+            v.setOnClickPendingIntent(R.id.groups, action(context, widgetId, "groups"))
+            v.setOnClickPendingIntent(R.id.header, open(context, widgetId, data.id))
+            v.setPendingIntentTemplate(R.id.lessonList, open(context, widgetId, data.id, mutable = true))
+            v.setOnClickPendingIntent(R.id.noticeBox, open(context, widgetId, data.id, notices = true))
             manager.updateAppWidget(widgetId, v)
             manager.notifyAppWidgetViewDataChanged(widgetId, R.id.lessonList)
         }

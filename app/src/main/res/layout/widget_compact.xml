@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/compactRoot"
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="@drawable/panel"
     android:paddingStart="12dp" android:paddingEnd="12dp"
     android:paddingTop="10dp" android:paddingBottom="10dp"
-    android:orientation="vertical" android:gravity="center_vertical">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+     >
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:gravity="center_vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginEnd="36dp"
         android:orientation="horizontal" android:gravity="center_vertical">
         <TextView android:id="@+id/compactHeader" android:layout_width="0dp"
             android:layout_height="wrap_content" android:layout_weight="1"
@@ -20,7 +22,7 @@
             android:background="@drawable/compact_badge"
             android:textColor="#6EDAC6" android:textSize="11sp" android:textStyle="bold"/>
     </LinearLayout>
-    <TextView android:id="@+id/compactSubject" android:layout_width="match_parent"
+    <TextView android:layout_marginEnd="30dp" android:id="@+id/compactSubject" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="4dp"
         android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"
         android:ellipsize="end" android:maxLines="2"/>
@@ -36,4 +38,8 @@
         android:layout_height="wrap_content" android:layout_marginTop="3dp"
         android:textColor="#9DD9FF" android:textSize="11sp"
         android:singleLine="true" android:ellipsize="end"/>
-</LinearLayout>
+    </LinearLayout>
+    <TextView android:id="@+id/groups" android:layout_width="36dp" android:layout_height="40dp"
+        android:layout_gravity="top|end" android:gravity="center" android:text="☆" android:textSize="23sp"
+        android:contentDescription="Избранные группы" />
+</FrameLayout>

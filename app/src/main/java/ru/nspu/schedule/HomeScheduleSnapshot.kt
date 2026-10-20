@@ -15,5 +15,8 @@ internal data class HomeScheduleSnapshot(
     val availableSubgroups: List<String>,
     val changes: List<String>,
     val updated: String,
-    val error: String
+    val error: String,
+    val groupId: Int,
+    val favorites: List<FavoriteGroup>,
+    val primaryGroupId: Int
 )

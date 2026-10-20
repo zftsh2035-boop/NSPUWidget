@@ -1,5 +1,6 @@
 package ru.nspu.schedule
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.view.View
@@ -9,20 +10,27 @@ import android.widget.RemoteViewsService
 /** Scrollable, unbounded widget list instead of four hard-coded rows. */
 class LessonListService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
-        Factory(applicationContext)
+        Factory(applicationContext, intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1))
 
-    private class Factory(private val context: Context) : RemoteViewsFactory {
+    private class Factory(private val context: Context, private val widgetId: Int) : RemoteViewsFactory {
         private var rows: List<DayRow> = emptyList()
-        private var date = Store.date(context)
+        private var date = java.time.LocalDate.now(ZONE)
+        private var cards: Map<Lesson, LessonPresentation> = emptyMap()
         private var focus: FocusedLesson? = null
         private var themeMode = WidgetTheme.mode(context)
         private var colors = WidgetTheme.palette(context)
 
         override fun onCreate() = onDataSetChanged()
         override fun onDataSetChanged() {
-            date = Store.date(context)
-            rows = DayTimeline.build(Store.forDate(context, date))
-            focus = Store.focus(context)
+            val view = WidgetSettings.view(context, widgetId)
+            val data = view.data
+            date = view.date()
+            val lessons = data.forDate(date)
+            rows = DayTimeline.build(lessons)
+            val links = ScheduleLinks.Index(data.currentLinks())
+            val start = data.termStart()
+            cards = lessons.associateWith { it.present(date, start, links) }
+            focus = data.focus()
             themeMode = WidgetTheme.mode(context)
             colors = WidgetTheme.palette(context)
         }
@@ -42,7 +50,7 @@ class LessonListService : RemoteViewsService() {
                 }
             }
             val lesson = (row as DayRow.LessonRow).lesson
-            val detail = SiteParser.details(lesson, date, Store.termStart(context))
+            val detail = cards[lesson] ?: return null
             val selected = LessonFocus.matches(focus, date, lesson)
             val color = if (selected) {
                 if (themeMode == WidgetMode.DARK) 0xFFFFE083.toInt() else colors.accent

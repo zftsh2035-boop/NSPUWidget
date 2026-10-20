@@ -26,6 +26,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,10 +52,11 @@ private val Amber = Color(0xFFC07816)
 class MainActivity : ComponentActivity() {
     private var scheduleRevision by mutableIntStateOf(0)
     private var screenActive by mutableStateOf(false)
+    private var navigationRequest by mutableLongStateOf(0L)
     private val scheduleKeys = setOf("lessons", "notices", "updated", "error", "change_history",
-        "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start")
+        "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start", "favorites", "primary_group_id")
     private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key in scheduleKeys) {
+        if (key in scheduleKeys || key == "data_revision_${Store.scheduleGroupId(this)}") {
             if (Looper.myLooper() == Looper.getMainLooper()) scheduleRevision++
             else runOnUiThread { scheduleRevision++ }
         }
@@ -64,6 +67,28 @@ class MainActivity : ComponentActivity() {
             runCatching { ScheduleWidget.renderAll(applicationContext) }
                 .onFailure { android.util.Log.e("NSPUWidget", "Widget refresh failed", it) }
         }
+    }
+
+    private fun handleWidgetIntent(value: Intent) {
+        if (!value.hasExtra("open_group_id") && !value.getBooleanExtra("show_favorites", false)) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            Store.initialize(applicationContext)
+            val id = value.getIntExtra("open_group_id", -1)
+            Favorites.find(applicationContext, id)?.let {
+                Store.selectScheduleGroup(applicationContext, it.id, it.title)
+                if (Store.data(applicationContext, it.id).cached().isEmpty()) Sync.now(applicationContext, it.id)
+            }
+            withContext(Dispatchers.Main) {
+                setIntent(value)
+                navigationRequest = System.nanoTime()
+                scheduleRevision++
+            }
+        }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWidgetIntent(intent)
     }
 
     override fun onResume() {
@@ -86,11 +111,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         getSharedPreferences("schedule", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(scheduleListener)
         lifecycleScope.launch(Dispatchers.IO) {
+            Store.initialize(applicationContext)
             Sync.schedule(applicationContext)
             if (Store.cached(applicationContext).isEmpty() || Store.missingScheduleLinks(applicationContext)) {
                 Sync.now(applicationContext)
             }
         }
+        handleWidgetIntent(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
@@ -139,6 +166,9 @@ class MainActivity : ComponentActivity() {
             ) else base
             val pageStack = remember { mutableStateListOf<OfficialSchedulePage>() }
             val pageStateHolder = rememberSaveableStateHolder()
+            LaunchedEffect(navigationRequest) {
+                if (navigationRequest > 0) pageStack.clear()
+            }
             MaterialTheme(colorScheme = colors) {
                 val top = pageStack.lastOrNull()
                 if (top == null) {
@@ -170,8 +200,13 @@ class MainActivity : ComponentActivity() {
         onOpenSchedule: (OfficialSchedulePage) -> Unit) {
         var rerender by remember { mutableIntStateOf(0) }
         val refreshTick = rerender + scheduleRevision // Observe data revision without 15-second global polling.
-        val snapshot by produceState<HomeScheduleSnapshot?>(null, refreshTick) {
-            value = withContext(Dispatchers.Default) { Store.homeSnapshot(applicationContext) }
+        var favoritePicker by remember { mutableStateOf(false) }
+        var pendingFocusGroup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
+        val selectedGroupId = remember(refreshTick) { Store.scheduleGroupId(this@MainActivity) }
+        val snapshot by key(selectedGroupId) {
+            produceState<HomeScheduleSnapshot?>(null, refreshTick) {
+                value = withContext(Dispatchers.Default) { Store.homeSnapshot(applicationContext, selectedGroupId) }
+            }
         }
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
@@ -202,6 +237,15 @@ class MainActivity : ComponentActivity() {
                 intent.getBooleanExtra("show_notices", false) -> 1
                 else -> 0
             })
+        }
+        var handledNavigation by androidx.compose.runtime.saveable.rememberSaveable { mutableLongStateOf(0L) }
+        LaunchedEffect(navigationRequest) {
+            if (navigationRequest > 0 && handledNavigation != navigationRequest) {
+                handledNavigation = navigationRequest
+                selectedTab = if (intent.getBooleanExtra("show_notices", false)) 1 else 0
+                favoritePicker = intent.getBooleanExtra("show_favorites", false)
+                pendingFocusGroup = intent.getIntExtra("open_group_id", -1).takeIf { it > 0 }
+            }
         }
         val listState = rememberLazyListState()
         // Pass State without reading it here: scrolling must not recompose AppScreen.
@@ -286,11 +330,12 @@ class MainActivity : ComponentActivity() {
         val focusIndex = timeline.indexOfFirst { row ->
             row is DayRow.LessonRow && LessonFocus.matches(focusedLesson, date, row.lesson)
         }
-        LaunchedEffect(selectedTab, date, focusIndex, group) {
-            if (selectedTab == 0 && autoScroll && focusIndex >= 0) {
+        LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup) {
+            if (selectedTab == 0 && (autoScroll || pendingFocusGroup == home.groupId) && focusIndex >= 0) {
                 val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
                     1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
                 listState.scrollToItem(prefix + focusIndex)
+                pendingFocusGroup = null
             } else if (selectedTab != 0) listState.scrollToItem(0)
         }
         Scaffold(
@@ -298,6 +343,9 @@ class MainActivity : ComponentActivity() {
                 CenterAlignedTopAppBar(
                     title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                     actions = {
+                        IconButton(onClick = { favoritePicker = true }, modifier = Modifier.semantics {
+                            contentDescription = "Избранные группы"
+                        }) { Text("☆", fontSize = 25.sp) }
                         TextButton(onClick = { Sync.now(this@MainActivity); rerender++ }) {
                             Text("⟳", fontSize = 27.sp)
                         }
@@ -354,20 +402,21 @@ class MainActivity : ComponentActivity() {
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
-                            Text("ТВОЯ ГРУППА", fontSize = 11.sp,
+                            Text(if (home.groupId == home.primaryGroupId) "ТВОЯ ГРУППА" else "ИЗБРАННАЯ ГРУППА", fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .75f))
                             Row(verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(group.substringBefore(" "), fontSize = 24.sp,
+                                    Text(home.favorites.firstOrNull { it.id == home.groupId }?.displayName
+                                        ?: group.substringBefore(" "), fontSize = 24.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                    Text(group.substringAfter(" ", ""), maxLines = 2,
+                                    Text(group, maxLines = 2,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontSize = 12.sp)
                                 }
-                                FilledTonalButton(onClick = { loadInstitutes() }) { Text("Сменить") }
+                                FilledTonalButton(onClick = { favoritePicker = true }) { Text("Избранное") }
                             }
                         }
                     }
@@ -684,6 +733,36 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        if (favoritePicker) {
+            FavoritesDialog(home.favorites, home.groupId, home.primaryGroupId,
+                onDismiss = { favoritePicker = false },
+                onSelect = { favorite ->
+                    favoritePicker = false
+                    pendingFocusGroup = favorite.id
+                    selectedTab = 0
+                    Store.selectScheduleGroup(this@MainActivity, favorite.id, favorite.title)
+                    rerender++
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val data = Store.data(applicationContext, favorite.id)
+                        if (data.needsRefresh()) Sync.now(applicationContext, favorite.id)
+                    }
+                },
+                onAdd = { favoritePicker = false; loadInstitutes() },
+                onRename = { favorite, name ->
+                    Favorites.rename(this@MainActivity, favorite.id, name)
+                    refreshWidgets(); rerender++
+                },
+                onRemove = { favorite ->
+                    Favorites.remove(this@MainActivity, favorite.id)
+                    pendingFocusGroup = Store.scheduleGroupId(this@MainActivity)
+                    refreshWidgets(); rerender++
+                },
+                onMakePrimary = { favorite ->
+                    Favorites.makePrimary(this@MainActivity, favorite.id)
+                    refreshWidgets(); rerender++
+                })
+        }
+
         if (picker != 0) {
             AlertDialog(onDismissRequest = { picker = 0 },
                 title = { Text(if (picker == 1) "Выбери институт" else faculty?.title ?: "Выбери группу") },
@@ -703,8 +782,10 @@ class MainActivity : ComponentActivity() {
                                 Text(option.title, modifier = Modifier.fillMaxWidth()
                                     .clickable {
                                         Store.selectScheduleGroup(this@MainActivity, option.id, option.title)
+                                        pendingFocusGroup = option.id
+                                        selectedTab = 0
                                         refreshWidgets()
-                                        Sync.now(this@MainActivity)
+                                        Sync.now(this@MainActivity, option.id)
                                         picker = 0
                                         rerender++
                                     }.padding(vertical = 12.dp),

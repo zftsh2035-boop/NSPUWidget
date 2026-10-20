@@ -13,6 +13,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info"/>
         </receiver>
         <receiver android:name=".FocusClockReceiver" android:exported="false"/>
+        <service android:name=".FavoriteListService" android:permission="android.permission.BIND_REMOTEVIEWS" android:exported="false"/>
         <service android:name=".LessonListService" android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS"/>
     </application>
