@@ -51,3 +51,11 @@ Latest runs on `faa4e982d6aa7d160e8c392f53caea05db738432`:
 - Android 10: complete notes, planner and favorites scenarios passed (`39476466198`). Pinning automation selected the non-clickable dialog title, leaving the native confirmation open; screenshot/XML confirmed the wrong tap. Require a clickable confirmation button.
 - Android 15: native pinning, planner and favorites passed (`39476466212`, attempt 2). Notes verified long text and both widget links, then expected the normal compact layout in a host whose padding left less than the 170dp responsive breakpoint. The screenshot showed the valid tiny layout with room 411 inline. Request a 200dp host to exercise the normal layout, retaining the room and full-note assertions.
 - Both corrected scenarios still require a new emulator run. No performance claim is made while the feature gate prevents measurements.
+
+Release verification on `adaf1c2826026f7c44a4fc962a2f9303a03703b6`:
+
+- Android 15 run `39516135537`: all four scenarios passed, including native pinning/binding; complete note CRUD, full-text/compact widget links, rotation, restart and deletion; v1 migration and two reminders; freely scrolling dates/calendar; independent favorites and two real widgets.
+- Signed build `39516135221`, attempt 2: signing bundle loaded successfully; regression and live parser tests passed; R8 APKs built. CI verified certificate SHA-256 `03d2e0e96610346495a76abd60dc9e3dc4f968f457898426e3326183dd9cd85b`, matching the preserved permanent key.
+- Android 10 run `39516135290`: native pinning, planner and favorites passed. The notes fixture stopped before its first full-widget assertion; its screenshot contains only the provider's static initial layout, and logcat shows no provider process started during binding. This is consistent with fixture initialization/stopped-package state; it does not exercise any note assertion. The setup issue is not marked as resolved. The complete Android 10 notes scenario passed in `39476466198` on `faa4e982...`; `git diff` confirms identical app and widget-host sources between those commits. The current Android 15 complete notes scenario also passed.
+- The Android 10 automation setup issue remains recorded; its performance phase did not run, so this release makes no new frame-rate, memory or battery claim.
+- Physical OEM launcher testing remains outstanding.
