@@ -132,7 +132,13 @@ def verify(out):
     assert bounds(tiny_note)[3] - bounds(tiny_note)[1] < 50, 'Tiny note grew beyond a single line'
     full_note(long_note.rstrip())
     save_ui(out, 'long-note-preview')
-    adb('shell', 'am', 'start', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 180)
+    root = wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoot'))
+    tiny_height = bounds(root)[3] - bounds(root)[1]
+    # am start can merely bring an existing standard-mode task to the front,
+    # leaving extras untouched. Restart the host explicitly for this resize.
+    adb('shell', 'am', 'start', '-S', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 180)
+    wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoot') and
+              int(re.findall(r'\d+', n['bounds'])[3]) - int(re.findall(r'\d+', n['bounds'])[1]) > tiny_height * 1.3)
     wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoom') and '411' in n.get('text', ''))
     normal_note = note_text(long_note.rstrip(), compact=True)
     save_ui(out, 'normal-compact-long-note')
@@ -140,7 +146,7 @@ def verify(out):
     assert field().get('text') == long_note.rstrip(), 'Truncated preview lost the full note'
     type_note('Bring bandages and notebook')
     save_note()
-    start_host()
+    adb('shell', 'am', 'start', '-S', '-W', '-n', HOST + '/.WidgetHostActivity')
     tap(note_text('Bring bandages and notebook', compact=True))
 
     # Draft text and its target survive Activity recreation.
