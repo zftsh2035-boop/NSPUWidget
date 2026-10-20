@@ -4,4 +4,8 @@ build/
 app/build/
 local.properties
 performance-results/
+modern-results/
+*.jks
+*.keystore
+NSPUWidget_signing_bundle.json
 __pycache__/

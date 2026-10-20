@@ -115,6 +115,11 @@ def fixture_files(directory):
 
 def seed():
     adb('shell', 'am', 'force-stop', PKG)
+    # The functional scenarios start with notifications enabled. Android 13+
+    # otherwise places its first-run permission dialog above the tested UI.
+    # Grant while the disposable fixture is installed; replacement retains it.
+    if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:
+        adb('shell', 'pm', 'grant', PKG, 'android.permission.POST_NOTIFICATIONS')
     adb('shell', 'run-as', PKG, 'mkdir', '-p', 'shared_prefs', 'cache')
     with tempfile.TemporaryDirectory() as temp:
         for path, destination in fixture_files(Path(temp)):

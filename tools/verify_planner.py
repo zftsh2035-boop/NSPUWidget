@@ -70,8 +70,8 @@ def verify(out):
     long_text = 'Homework details ' + 'Read the next chapter and bring a notebook. ' * 14
     write_field('Текст заметки', long_text.strip())
     tap(text('Сохранить'))
-    # A future day's default display window may not have started yet. All saved
-    # notes remain accessible from the list irrespective of their display window.
+    # Open saved records through the list, irrespective of the calendar preview
+    # or the display window. The separate reader must not be an editable field.
     tap(wait_node(lambda n: n.get('content-desc') == 'Мои заметки'))
     tap(text('Training'))
     text(long_text.strip())
@@ -119,10 +119,13 @@ def verify(out):
     before = calendar.get('text')
     tap(calendar)
     tap(wait_node(lambda n: n.get('resource-id') == 'android:id/next'))
-    tap(wait_node(lambda n: n.get('text') == '15' and n.get('clickable') == 'true'))
+    # API 29 exposes calendar days as virtual non-clickable nodes even though
+    # their screen bounds accept taps. Newer Android versions mark them clickable.
+    tap(wait_node(lambda n: n.get('text') == '15' and n.get('enabled') == 'true' and
+                  n.get('content-desc')))
     native_ok()
     after = wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре').get('text')
-    assert before != after, 'Calendar selection remained on the old date'
+    assert before != after and after.startswith('15 '), 'Calendar did not select the requested day'
     save_ui(out, 'next-month-selection')
     (out / 'result.txt').write_text('PASS: real v1 migration, full note reader, day note, two persisted reminder times, OS alarm, single group chooser, next-month calendar\n')
     print('Planner upgrade and UI: PASS', flush=True)

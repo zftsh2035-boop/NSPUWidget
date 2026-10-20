@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -149,6 +150,14 @@ class MainActivity : ComponentActivity() {
                 AppSettings.LIGHT -> false
                 AppSettings.DARK, AppSettings.AMOLED, AppSettings.NEON -> true
                 else -> systemDark
+            }
+            SideEffect {
+                if (Build.VERSION.SDK_INT >= 35) {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !dark
+                        isAppearanceLightNavigationBars = !dark
+                    }
+                }
             }
             val base = when {
                 Build.VERSION.SDK_INT >= 31 && dark -> dynamicDarkColorScheme(this)

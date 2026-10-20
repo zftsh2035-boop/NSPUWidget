@@ -76,9 +76,13 @@ private fun pickNoteMoment(c: Context, initial: Long, onValue: (Long) -> Unit) {
 
 @Composable
 private fun NoteWindow(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    // Compose 1.7 dialogs can report zero navigation-bar insets. Keep the
+    // activity's live inset so long notes never put actions under the gesture bar.
+    val navigationBars = WindowInsets.navigationBars
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false,
         decorFitsSystemWindows = false, dismissOnClickOutside = false)) {
-        Box(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(12.dp),
+        Box(Modifier.fillMaxSize().systemBarsPadding().windowInsetsPadding(navigationBars)
+            .imePadding().padding(12.dp),
             contentAlignment = Alignment.Center) {
             Surface(Modifier.widthIn(max = 600.dp).fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp,
@@ -152,13 +156,13 @@ internal fun NoteEditor(request: NoteEditorRequest, groupName: String, saving: B
                         else -> "${text.length} / ${PersonalNote.MAX_LENGTH} · только для тебя"
                     })
                 })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OptionTile("Показывать", if (from == null && until == null) "В день пары"
                     else (from?.let(::noteMoment) ?: "С начала дня") + " → " +
                         (until?.let(::noteMoment) ?: "Без окончания"), section == 1,
-                    Modifier.weight(1f), enabled = !saving) { section = if (section == 1) 0 else 1 }
+                    Modifier.weight(1f).fillMaxHeight(), enabled = !saving) { section = if (section == 1) 0 else 1 }
                 OptionTile("Напомнить", if (reminders.isEmpty()) "Без уведомлений" else "Выбрано: ${reminders.size}",
-                    section == 2, Modifier.weight(1f), enabled = !saving) { section = if (section == 2) 0 else 2 }
+                    section == 2, Modifier.weight(1f).fillMaxHeight(), enabled = !saving) { section = if (section == 2) 0 else 2 }
             }
             if (section == 1) {
                 if (!request.target.isDay) Text("Заметка к паре показывается в день этой пары.",
