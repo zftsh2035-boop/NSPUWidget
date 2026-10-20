@@ -28,6 +28,17 @@ Android 10 rerun `39469844767` on commit `8a431be4dc0924fe230665fd1af79bb891867b
 - Planner completed migration, day-note reader and two persistent OS reminders, then its calendar selector rejected API 29's virtual day nodes (`clickable=false`). The selector now uses the observed enabled day node and still verifies the resulting selected day. Performance collection was skipped after this failure.
 - After the navigation-inset change, local optimized APK build and lint passed again (0 errors, 52 warnings).
 
+Android 10 run `39473458778` on `f878137a8332ca6bc00c83bbd9179afd6cbf62ed`:
+
+- Full planner scenario passed, including swiping through more than seven distinct date chips without changing the selected day, then selecting a distant date.
+- Native widget pinning and favorite/widget independence passed again.
+- Notes reached long-text editing but the automation's queued caret/delete keys ran during the IME resize, leaving a 45-character tail. The helper now observes the resized field and clears any remaining tail before entering and exactly checking new text.
+
+Android 15 adaptations in the automation:
+
+- Pixel Launcher's observed confirmation is `Add to home screen`; both old and new capitalization are accepted, with actual widget binding still required.
+- Use a normal background-process kill before a widget link. Android 15 intentionally disables widgets and cancels PendingIntents after `force-stop` until the user launches the app (Android Developers, `about/versions/15/behavior-changes-all`). Tests that explicitly relaunch the app still use force-stop for persistence checks.
+
 Signing limitation:
 
 The downloaded v2.10 APK uses a different certificate from the new permanent key. The old private key is unavailable; generating a new permanent key cannot restore in-place compatibility with v2.10. The SQL migration preserves notes only when Android retains the app's data. Release notes explicitly ask users to copy their notes before removing the old application.

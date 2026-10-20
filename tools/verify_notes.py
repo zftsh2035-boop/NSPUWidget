@@ -38,12 +38,22 @@ def field():
 
 
 def type_into_field(existing, value):
+    description = next(n.get('content-desc') for n in existing.iter('node')
+                       if n.get('content-desc'))
     tap(existing)
-    previous = existing.get('text', '')
-    # MOVE_END is the end of a visual line in a multiline Compose field.
-    # Move below every wrapped line before deleting the previous draft.
-    down = previous.count('\n') + len(previous) // 10 + 5
-    adb('shell', 'input', 'keyevent', '123', *(['20'] * down), '123', *(['67'] * (len(previous) + 3)))
+    # Observe the field after the IME resizes the dialog before moving its caret.
+    # MOVE_END means a visual line's end. A resize during the queued arrow keys
+    # can leave a tail after deletion, so observe progress and clear that tail too.
+    for _ in range(4):
+        current = named_field(description)
+        previous = current.get('text', '')
+        if not previous:
+            break
+        down = previous.count('\n') + len(previous) // 10 + 5
+        adb('shell', 'input', 'keyevent', '123', *(['20'] * down), '123',
+            *(['67'] * (len(previous) + 3)))
+        wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
+                  n.get('focused') == 'true' and len(n.get('text', '')) < len(previous))
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
               n.get('focused') == 'true' and n.get('text', '') == '')
     # A single ADB input floods Compose/IME with hundreds of key events; its
@@ -154,7 +164,9 @@ def verify(out):
     save_ui(out, 'note-in-both-widgets')
     print('Notes: saved and visible in full/tiny widgets', flush=True)
     # Collection fill-in intent: open the exact dated class, not the app's live focus.
-    adb('shell', 'am', 'force-stop', PKG)
+    # Android 15 force-stop deliberately disables widgets and cancels their
+    # PendingIntents. A normal background-process kill preserves launcher links.
+    adb('shell', 'am', 'kill', PKG)
     tap(full_note('Bring bandages'))
     tap(text('Изменить'))
     text('Личная заметка')
