@@ -202,7 +202,7 @@ def verify(out):
     tap(favorites_button())
     tap(text(CODES[0]))
     tap(find_lesson_note_button(subject))
-    text(CODES[0])
+    wait_node(lambda n: n.get('text', '').endswith('\n' + CODES[0]))
     assert field().get('text', '') == '', 'Note leaked into another group'
     type_note('Friend notebook')
     save_note()
