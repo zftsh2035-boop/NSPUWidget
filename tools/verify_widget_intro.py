@@ -40,8 +40,8 @@ def verify(out):
     tap(text('Добавить виджет'))
     text('Добавь виджет расписания')
     tap(text('Добавить виджет'))
-    destination = wait_node(lambda n: n.get('text') in (
-        'Как добавить виджет', 'Add to Home screen', 'Добавить на главный экран'))
+    destination = wait_node(lambda n: n.get('text', '').lower() in (
+        'как добавить виджет', 'add to home screen', 'добавить на главный экран'))
     if destination.get('text') == 'Как добавить виджет':
         # A launcher is allowed to decline pinning. The in-app instructions must remain usable.
         tap(text('Понятно'))
@@ -49,7 +49,8 @@ def verify(out):
     else:
         save_ui(out, 'native-pin-confirmation')
         button = wait_node(lambda n: n.get('package') != PKG and n.get('text', '').lower() in (
-            'add automatically', 'добавить автоматически', 'add', 'добавить'))
+            'add automatically', 'добавить автоматически', 'add', 'добавить',
+            'add to home screen', 'добавить на главный экран'))
         tap(button)
         deadline = time.monotonic() + 18
         while time.monotonic() < deadline:
