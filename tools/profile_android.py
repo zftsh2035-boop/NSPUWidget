@@ -211,11 +211,13 @@ def main():
     adb('shell', 'svc', 'data', 'disable')
     try:
         seed()
-        print('Measuring original v2.7', flush=True)
-        run(args.baseline_apk, args.output / 'v2.7', False)
-        seed()  # v2.7 is debuggable; replace its fixture before installing non-debuggable v2.8.
-        print('Measuring current v2.8', flush=True)
-        run(args.current_apk, args.output / 'v2.8', True)
+        print('Measuring original v2.8', flush=True)
+        run(args.baseline_apk, args.output / 'v2.8', False)
+        adb('uninstall', PKG)
+        adb('install', '-r', args.fixture_apk)
+        seed()
+        print('Measuring current v2.9', flush=True)
+        run(args.current_apk, args.output / 'v2.9', True)
     finally:
         adb('shell', 'svc', 'wifi', 'enable', check=False)
         adb('shell', 'svc', 'data', 'enable', check=False)

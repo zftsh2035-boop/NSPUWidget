@@ -120,6 +120,9 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setTextColor(R.id.groupsTitle, colors.ink)
             v.setTextColor(R.id.groupsClose, colors.accent)
             v.setTextColor(R.id.manageFavorites, colors.accent)
+            val height = manager.getAppWidgetOptions(widgetId)
+                .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
+            if (height < 200) v.setViewVisibility(R.id.manageFavorites, View.GONE)
             v.setOnClickPendingIntent(R.id.groupsClose, action(context, widgetId, "close"))
             v.setOnClickPendingIntent(R.id.manageFavorites,
                 open(context, widgetId, WidgetSettings.groupId(context, widgetId), favorites = true))

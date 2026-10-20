@@ -63,3 +63,10 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
 }
+
+// Install the seeder before either the baseline or current optimized APK.
+androidComponents {
+    onVariants(selector().withBuildType("fixture")) { variant ->
+        variant.outputs.forEach { it.versionCode.set(1) }
+    }
+}
