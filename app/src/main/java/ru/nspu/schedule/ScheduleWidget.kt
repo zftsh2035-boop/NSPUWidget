@@ -68,7 +68,7 @@ class ScheduleWidget : AppWidgetProvider() {
                     "select" -> {
                         WidgetSettings.select(context, id, intent.getIntExtra("favorite_id", -1))
                         val selected = Store.data(context, WidgetSettings.groupId(context, id))
-                        if (selected.cached().isEmpty()) Sync.now(context, selected.id)
+                        if (selected.needsRefresh()) Sync.now(context, selected.id)
                     }
                 }
                 render(context, manager, id)
@@ -147,7 +147,7 @@ class ScheduleWidget : AppWidgetProvider() {
             val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 220)
                 .takeIf { it > 0 } ?: 220
             val compact = heightDp < 210
-            val tiny = heightDp < 145 || widthDp < 185
+            val tiny = heightDp < 170 || widthDp < 185
             val medium = heightDp in 210..344
             val widgetPalette = WidgetTheme.palette(context)
             val widgetMode = WidgetTheme.mode(context)
@@ -168,11 +168,14 @@ class ScheduleWidget : AppWidgetProvider() {
                     val d = SiteParser.details(focus.lesson, focus.date, data.termStart())
                     v.setTextViewText(R.id.compactSubject, d.subject)
                     v.setTextViewText(R.id.compactTeacher, d.teacher)
-                    v.setTextViewText(R.id.compactTime, if (focus.ongoing)
-                        "До " + focus.lesson.time.substringAfter('-') else
-                        focus.date.format(DateTimeFormatter.ofPattern(
+                    val time = if (focus.ongoing) "До " + focus.lesson.time.substringAfter('-')
+                        else if (tiny && focus.date == java.time.LocalDate.now(ZONE))
+                            "В " + focus.lesson.time.substringBefore('-')
+                        else focus.date.format(DateTimeFormatter.ofPattern(
                             if (tiny) "dd.MM" else "EE dd.MM", Locale.forLanguageTag("ru-RU"))) +
-                            " · " + focus.lesson.time.substringBefore('-'))
+                            " · " + focus.lesson.time.substringBefore('-')
+                    v.setTextViewText(R.id.compactTime,
+                        time + if (tiny && d.room != "—") " · ауд. " + d.room else "")
                     v.setTextViewText(R.id.compactKind, SiteParser.shortKind(d.kind))
                     v.setTextViewText(R.id.compactRoom,
                         if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)

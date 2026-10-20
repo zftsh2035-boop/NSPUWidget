@@ -153,17 +153,33 @@ def verify(out):
     controls = [n for n in dump().iter('node') if n.get('content-desc') == 'Избранные группы']
     tap(max(controls, key=lambda n: bounds(n)[1]))
     text('Избранные группы')
-    close = wait_node(lambda n: n.get('content-desc') == 'Вернуться к расписанию')
-    tap(close)
-    compact_is(PRIMARY)
+    picker = wait_node(lambda n: n.get('resource-id', '').endswith(':id/favoriteList'))
+    left, upper, right, lower = bounds(picker)
+    chosen = None
+    for upward in [True] * 5 + [False] * 7:
+        candidates = [n for n in dump().iter('node')
+                      if n.get('resource-id', '').endswith(':id/favoriteName') and n.get('text') == CODES[1]
+                      and bounds(n)[1] >= upper and bounds(n)[3] <= lower]
+        if candidates:
+            chosen = candidates[0]
+            break
+        adb('shell', 'input', 'swipe', (left + right) // 2, lower - 3 if upward else upper + 3,
+            (left + right) // 2, upper + 3 if upward else lower - 3, 450)
+    assert chosen is not None, 'Cannot reach a friend in the compact widget favorites list'
+    tap(chosen)
+    compact_is(CODES[1])
+    full_is('Friend3')
+    compact_time = wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactTime'))
+    assert 'ауд. 411' in compact_time.get('text', ''), 'Tiny widget lost its classroom'
+    save_ui(out, 'compact-friend-selection')
     adb('shell', 'am', 'force-stop', HOST)
     start_host()
     full_is('Friend3')
-    compact_is(PRIMARY)
+    compact_is(CODES[1])
     save_ui(out, 'persistent-widget-selections')
     (out / 'result.txt').write_text(
         'PASS: legacy cache migration; four default group names; live lesson focus with auto-scroll disabled; '
-        'rename propagation; independent app/two widget groups and dates; compact picker; persistence\n')
+        'rename propagation; independent app/two widget groups and dates; compact picker scrolling/selection; persistence\n')
     print('Favorite groups and two actual widgets: PASS', flush=True)
 
 
