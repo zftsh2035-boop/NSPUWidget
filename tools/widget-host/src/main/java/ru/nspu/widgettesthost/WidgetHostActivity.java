@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetHost;
 import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.widget.LinearLayout;
@@ -55,4 +56,10 @@ public final class WidgetHostActivity extends Activity {
     }
     @Override public void onStart() { super.onStart(); host.startListening(); }
     @Override public void onStop() { host.stopListening(); super.onStop(); }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        int previousHeight = getIntent().getIntExtra("compact_height", 112);
+        setIntent(intent);
+        if (previousHeight != intent.getIntExtra("compact_height", 112)) recreate();
+    }
 }
