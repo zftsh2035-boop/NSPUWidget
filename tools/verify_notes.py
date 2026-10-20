@@ -48,9 +48,12 @@ def save_note():
 def cancel_note():
     hide_keyboard()
     tap(text('Отмена'))
-    wait_node(lambda n: n.get('content-desc') == 'Мои заметки')
-    assert not any(n.get('class') == 'android.widget.EditText' for n in dump().iter('node')), \
-        'Cancel left the note editor open'
+    # The underlying surface can be either the schedule or the notes list.
+    for _ in range(12):
+        if not any(n.get('class') == 'android.widget.EditText' for n in dump().iter('node')):
+            return
+        time.sleep(.35)
+    raise AssertionError('Cancel left the note editor open')
 
 
 def find_lesson_note_button(subject):
