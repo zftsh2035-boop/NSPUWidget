@@ -86,6 +86,7 @@ def verify(out):
     note_text('Bring bandages', compact=True)
     full_note('Bring bandages')
     save_ui(out, 'note-in-both-widgets')
+    print('Notes: saved and visible in full/tiny widgets', flush=True)
     # Collection fill-in intent: open the exact dated class, not the app's live focus.
     adb('shell', 'am', 'force-stop', PKG)
     tap(full_note('Bring bandages'))
@@ -107,7 +108,11 @@ def verify(out):
     assert bounds(tiny_note)[3] - bounds(tiny_note)[1] < 50, 'Tiny note grew beyond a single line'
     full_note(long_note.rstrip())
     save_ui(out, 'long-note-preview')
-    tap(tiny_note)
+    adb('shell', 'am', 'start', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 180)
+    wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoom') and '411' in n.get('text', ''))
+    normal_note = note_text(long_note.rstrip(), compact=True)
+    save_ui(out, 'normal-compact-long-note')
+    tap(normal_note)
     assert field().get('text') == long_note.rstrip(), 'Truncated preview lost the full note'
     type_note('Bring bandages and notebook')
     tap(text('Сохранить'))
@@ -122,6 +127,7 @@ def verify(out):
     adb('shell', 'settings', 'put', 'system', 'user_rotation', '0')
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
     tap(text('Отмена'))
+    print('Notes: exact widget links, long previews and draft rotation checked', flush=True)
     # Cancel is not save. The original text is still in storage after process restart.
     adb('shell', 'am', 'force-stop', PKG)
     adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
@@ -130,6 +136,7 @@ def verify(out):
     assert field().get('text') == 'Bring bandages and notebook'
     tap(text('Отмена'))
     tap(text('Закрыть'))
+    print('Notes: saved text survived process restart; cancelled draft was discarded', flush=True)
 
     # Same weekday and subject next week must not repeat this personal reminder.
     # This is the same documented Activity intent that launcher views send.

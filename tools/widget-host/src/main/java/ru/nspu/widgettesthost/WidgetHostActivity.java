@@ -26,17 +26,17 @@ public final class WidgetHostActivity extends Activity {
         setContentView(root);
         ComponentName provider = new ComponentName("ru.nspu.schedule", "ru.nspu.schedule.ScheduleWidget");
         for (int number = 1; number <= 2; number++) {
-            int height = number == 1 ? 320 : 112;
+            int height = number == 1 ? 320 : getIntent().getIntExtra("compact_height", 112);
             int id = settings.getInt("widget_" + number, -1);
+            Bundle options = new Bundle();
+            int width = Math.round(getResources().getDisplayMetrics().widthPixels /
+                    getResources().getDisplayMetrics().density) - 16;
+            options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width);
+            options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width);
+            options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height);
+            options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, height);
             if (id < 0) {
                 id = host.allocateAppWidgetId();
-                Bundle options = new Bundle();
-                int width = Math.round(getResources().getDisplayMetrics().widthPixels /
-                        getResources().getDisplayMetrics().density) - 16;
-                options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width);
-                options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width);
-                options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height);
-                options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, height);
                 if (!manager.bindAppWidgetIdIfAllowed(id, provider, options)) {
                     TextView error = new TextView(this);
                     error.setText("BIND_APPWIDGET permission missing");
@@ -44,7 +44,7 @@ public final class WidgetHostActivity extends Activity {
                     return;
                 }
                 settings.edit().putInt("widget_" + number, id).apply();
-            }
+            } else manager.updateAppWidgetOptions(id, options);
             TextView label = new TextView(this);
             label.setText("Widget " + number + ": " + id);
             label.setTextSize(12);
