@@ -2,7 +2,9 @@
 import argparse
 from datetime import datetime, timedelta
 import json
+import re
 import shlex
+import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -23,9 +25,29 @@ def field():
 def type_note(value):
     existing = field()
     tap(existing)
-    adb('shell', 'input', 'keyevent', '123', *(['67'] * (len(existing.get('text', '')) + 3)))
+    previous = existing.get('text', '')
+    # MOVE_END is the end of a visual line in a multiline Compose field.
+    # Move below every wrapped line before deleting the previous draft.
+    down = previous.count('\n') + len(previous) // 10 + 5
+    adb('shell', 'input', 'keyevent', '123', *(['20'] * down), '123', *(['67'] * (len(previous) + 3)))
     adb('shell', 'input', 'text', value.replace(' ', '%s'))
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == value)
+
+
+def hide_keyboard():
+    if re.search(r'mInputShown=true', adb('shell', 'dumpsys', 'input_method')):
+        adb('shell', 'input', 'keyevent', '4')
+
+
+def save_note():
+    hide_keyboard()
+    tap(text('Сохранить'))
+    wait_node(lambda n: n.get('content-desc') == 'Мои заметки')
+
+
+def cancel_note():
+    hide_keyboard()
+    tap(text('Отмена'))
 
 
 def note_text(value, compact=False):
@@ -78,7 +100,7 @@ def verify(out):
     text('Заметка к паре')
     assert field().get('text', '') == '', 'New note must be empty'
     type_note('Bring bandages')
-    tap(text('Сохранить'))
+    save_note()
     wait_node(lambda n: n.get('text') == 'Заметка: Bring bandages')
     save_ui(out, 'saved-app-note')
 
@@ -93,7 +115,7 @@ def verify(out):
     text('Личная заметка')
     assert field().get('text') == 'Bring bandages', 'Cold widget link lost its note'
     type_note('Bring bandages and notebook')
-    tap(text('Сохранить'))
+    save_note()
     start_host()
     full_note('Bring bandages and notebook')
     tap(note_text('Bring bandages and notebook', compact=True))
@@ -102,7 +124,9 @@ def verify(out):
 
     long_note = 'Bring bandages and notebook ' + 'extra reminder ' * 22
     type_note(long_note.rstrip())
-    tap(text('Сохранить'))
+    save_ui(out, 'long-note-editor-keyboard')
+    save_note()
+    save_ui(out, 'long-note-saved-app')
     start_host()
     tiny_note = note_text(long_note.rstrip(), compact=True)
     assert bounds(tiny_note)[3] - bounds(tiny_note)[1] < 50, 'Tiny note grew beyond a single line'
@@ -115,7 +139,7 @@ def verify(out):
     tap(normal_note)
     assert field().get('text') == long_note.rstrip(), 'Truncated preview lost the full note'
     type_note('Bring bandages and notebook')
-    tap(text('Сохранить'))
+    save_note()
     start_host()
     tap(note_text('Bring bandages and notebook', compact=True))
 
@@ -126,7 +150,7 @@ def verify(out):
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
     adb('shell', 'settings', 'put', 'system', 'user_rotation', '0')
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
-    tap(text('Отмена'))
+    cancel_note()
     print('Notes: exact widget links, long previews and draft rotation checked', flush=True)
     # Cancel is not save. The original text is still in storage after process restart.
     adb('shell', 'am', 'force-stop', PKG)
@@ -134,7 +158,7 @@ def verify(out):
     tap(wait_node(lambda n: n.get('content-desc') == 'Мои заметки'))
     tap(text('Bring bandages and notebook'))
     assert field().get('text') == 'Bring bandages and notebook'
-    tap(text('Отмена'))
+    cancel_note()
     tap(text('Закрыть'))
     print('Notes: saved text survived process restart; cancelled draft was discarded', flush=True)
 
@@ -148,7 +172,7 @@ def verify(out):
         '--es', 'note_time', '8:30-10:00', '--es', 'note_kind', 'ПРАКТИКА', '--es', 'note_subgroup', 'all')
     text('Заметка к паре')
     assert field().get('text', '') == '', 'A note repeated on another date'
-    tap(text('Отмена'))
+    cancel_note()
 
     # Equal subjects in a different group still get independent personal notes.
     tap(favorites_button())
@@ -156,7 +180,7 @@ def verify(out):
     tap(wait_node(lambda n: n.get('content-desc', '').startswith('Добавить заметку: ' + subject + ', ')))
     assert field().get('text', '') == '', 'Note leaked into another group'
     type_note('Friend notebook')
-    tap(text('Сохранить'))
+    save_note()
     tap(wait_node(lambda n: n.get('content-desc') == 'Мои заметки'))
     text('Friend notebook')
     tap(text('Bring bandages and notebook'))
@@ -197,6 +221,7 @@ def main():
         adb('install', '-r', args.current_apk)
         adb('install', '-r', args.host_apk)
         adb('shell', 'appwidget', 'grantbind', '--package', HOST, '--user', '0')
+        time.sleep(6)
         adb('logcat', '-c')
         verify(args.output)
     except Exception:

@@ -257,7 +257,10 @@ class MainActivity : ComponentActivity() {
                         runCatching { ScheduleWidget.renderGroup(applicationContext, request.target.groupId) }
                             .onFailure { android.util.Log.e("NSPUWidget", "Note widget refresh failed", it) }
                     }
-                } else noteError = "Не удалось сохранить. Текст остался здесь — попробуй ещё раз."
+                } else {
+                    android.util.Log.e("NSPUWidget", "Personal note write failed", result.exceptionOrNull())
+                    noteError = "Не удалось сохранить. Текст остался здесь — попробуй ещё раз."
+                }
             }
         }
         var pendingFocusGroup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }

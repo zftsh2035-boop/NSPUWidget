@@ -192,6 +192,7 @@ def main():
     args = p.parse_args()
     assert adb('shell', 'getprop', 'ro.kernel.qemu').strip() == '1', 'Disposable emulator only'
     args.output.mkdir(parents=True, exist_ok=True)
+    adb('uninstall', HOST, check=False)
     adb('uninstall', PKG, check=False)
     adb('install', '-r', args.fixture_apk)
     adb('shell', 'svc', 'wifi', 'disable')
@@ -201,6 +202,7 @@ def main():
         adb('install', '-r', args.current_apk)
         adb('install', '-r', args.host_apk)
         adb('shell', 'appwidget', 'grantbind', '--package', HOST, '--user', '0')
+        time.sleep(6)
         adb('logcat', '-c')
         verify(args.output)
     except Exception:
