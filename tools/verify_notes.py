@@ -169,6 +169,10 @@ def verify(out):
 
     # Draft text and its target survive Activity recreation.
     type_note('Unsaved rotation draft')
+    # On a 320dp-high landscape display the IME can occupy the editor body.
+    # Check draft restoration with the field visible; keyboard-open saving is
+    # exercised separately above by the long-note test.
+    hide_keyboard()
     adb('shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0')
     adb('shell', 'settings', 'put', 'system', 'user_rotation', '1')
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == 'Unsaved rotation draft')
