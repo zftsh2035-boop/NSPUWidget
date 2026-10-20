@@ -18,23 +18,46 @@ def save_ui(out, name):
     (out / f'{name}.xml').write_text(ET.tostring(dump(), encoding='unicode'))
 
 
+def named_field(description):
+    # Compose exposes the label as a child of the editable accessibility node.
+    # Match that relationship rather than assuming content-desc is on EditText.
+    for _ in range(8):
+        for node in dump().iter('node'):
+            if node.get('class') == 'android.widget.EditText' and any(
+                    child.get('content-desc') == description for child in node.iter('node')):
+                return node
+        time.sleep(.35)
+    raise AssertionError('Editable field was not found: ' + description)
+
+
 def field():
     root = dump()
     if not any(n.get('class') == 'android.widget.EditText' for n in root.iter('node')):
         tap(text('Изменить'))
-    return wait_node(lambda n: n.get('class') == 'android.widget.EditText')
+    return named_field('Текст заметки')
 
 
-def type_note(value):
-    existing = field()
+def type_into_field(existing, value):
     tap(existing)
     previous = existing.get('text', '')
     # MOVE_END is the end of a visual line in a multiline Compose field.
     # Move below every wrapped line before deleting the previous draft.
     down = previous.count('\n') + len(previous) // 10 + 5
     adb('shell', 'input', 'keyevent', '123', *(['20'] * down), '123', *(['67'] * (len(previous) + 3)))
-    adb('shell', 'input', 'text', value.replace(' ', '%s'))
-    wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == value)
+    wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
+              n.get('focused') == 'true' and n.get('text', '') == '')
+    # A single ADB input floods Compose/IME with hundreds of key events; its
+    # asynchronous updates can drop the tail. Observe every short batch before
+    # sending the next, then still require an exact match of the complete text.
+    for end in range(0, len(value), 32):
+        adb('shell', 'input', 'text', value[end:end + 32].replace(' ', '%s'))
+        expected = value[:end + 32]
+        wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
+                  n.get('focused') == 'true' and n.get('text') == expected)
+
+
+def type_note(value):
+    type_into_field(field(), value)
 
 
 def hide_keyboard():

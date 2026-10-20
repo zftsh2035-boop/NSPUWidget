@@ -25,7 +25,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            // Debug-signed for installation, but without the debuggable runtime overhead.
+            if (!signingPath.isNullOrBlank()) signingConfig = signingConfigs.getByName("production")
+            // No debuggable runtime overhead in distributed development APKs.
             // R8 alone does not disable Android/Compose development checks.
             isDebuggable = false
             isMinifyEnabled = true
@@ -47,7 +48,7 @@ android {
             isDebuggable = true
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (signingPath.isNullOrBlank()) "debug" else "production")
         }
     }
 }

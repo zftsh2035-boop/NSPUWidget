@@ -27,26 +27,17 @@ jobs:
             test -n "$SDKMANAGER"
             "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
           fi
-      - name: Prepare persistent release signing (optional GitHub Secrets)
-        if: github.ref == 'refs/heads/stable'
+      - name: Load persistent signing from protected GitHub Secrets
         env:
+          NSPU_SIGNING_BUNDLE: ${{ secrets.NSPU_SIGNING_BUNDLE }}
+          NSPU_REQUIRE_SIGNING: ${{ github.ref == 'refs/heads/stable' }}
           NSPU_KEYSTORE_B64: ${{ secrets.NSPU_KEYSTORE_B64 }}
           NSPU_KEYSTORE_PASSWORD: ${{ secrets.NSPU_KEYSTORE_PASSWORD }}
           NSPU_KEY_ALIAS: ${{ secrets.NSPU_KEY_ALIAS }}
           NSPU_KEY_PASSWORD: ${{ secrets.NSPU_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$NSPU_KEYSTORE_B64" && -z "$NSPU_KEYSTORE_PASSWORD" && -z "$NSPU_KEY_ALIAS" && -z "$NSPU_KEY_PASSWORD" ]]; then
-            echo "No persistent release signing key yet: keep optimized debug APK installable."
-          elif [[ -n "$NSPU_KEYSTORE_B64" && -n "$NSPU_KEYSTORE_PASSWORD" && -n "$NSPU_KEY_ALIAS" && -n "$NSPU_KEY_PASSWORD" ]]; then
-            umask 077
-            printf '%s' "$NSPU_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/nspu-release.jks"
-            echo "NSPU_SIGNING_KEYSTORE=$RUNNER_TEMP/nspu-release.jks" >> "$GITHUB_ENV"
-            echo "Persistent signing key loaded from protected GitHub Secrets."
-          else
-            echo "::error::All four signing secrets must be configured together."
-            exit 1
-          fi
+        run: python3 tools/prepare_signing.py
+      - name: Verify signing configuration validation
+        run: python3 -m unittest discover -s tools -p test_prepare_signing.py
       - name: Run schedule regression tests
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Verify parser against the live public NSPU HTML (dev)
@@ -63,10 +54,6 @@ jobs:
               'https://schedule.nspu.ru/teacher_shedule.php?id=452&nextweek=0' || true
           done
       - name: Assemble R8 optimized APKs
-        env:
-          NSPU_KEYSTORE_PASSWORD: ${{ secrets.NSPU_KEYSTORE_PASSWORD }}
-          NSPU_KEY_ALIAS: ${{ secrets.NSPU_KEY_ALIAS }}
-          NSPU_KEY_PASSWORD: ${{ secrets.NSPU_KEY_PASSWORD }}
         run: gradle --no-daemon :app:assembleDebug :app:assembleRelease
       - name: Check APK integrity and measure sizes
         run: |
@@ -74,6 +61,7 @@ jobs:
           DEBUG=app/build/outputs/apk/debug/app-debug.apk
           test -s "$DEBUG"
           unzip -tq "$DEBUG" | tail -n 1
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$DEBUG"
           DEBUG_SIZE=$(stat -c%s "$DEBUG")
           echo "Optimized debug APK: $DEBUG_SIZE bytes"
           echo "Previous v2.0 debug APK: 9437386 bytes"
@@ -107,15 +95,11 @@ jobs:
           VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
           test -n "$VERSION"
           TAG="v$VERSION"
-          if [[ -f app/build/outputs/apk/release/app-release.apk ]]; then
-            SRC=app/build/outputs/apk/release/app-release.apk
-            NAME="NSPUWidget-${TAG}-release.apk"
-            NOTES="R8-optimized signed release. Built using a persistent signing key stored in GitHub Secrets."
-          else
-            SRC=app/build/outputs/apk/debug/app-debug.apk
-            NAME="NSPUWidget-${TAG}-optimized-debug.apk"
-            NOTES="R8-optimized debug-signed installable APK. A permanent release signing key is not yet configured; signatures may differ between builds."
-          fi
+          SRC=app/build/outputs/apk/release/app-release.apk
+          test -s "$SRC"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$SRC"
+          NAME="NSPUWidget-${TAG}-release.apk"
+          NOTES="R8-optimized signed release. Built using a persistent signing key stored in GitHub Secrets."
           cp "$SRC" "$NAME"
           sha256sum "$NAME" > "${NAME}.sha256"
           FILE_BYTES=$(stat -c%s "$NAME")

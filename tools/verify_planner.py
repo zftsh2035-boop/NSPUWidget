@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from profile_android import PKG, adb, bounds, dump, tap, text, wait_node
 from verify_favorites import HOST
-from verify_notes import seed_notes, save_ui
+from verify_notes import named_field, seed_notes, save_ui, type_into_field
 
 
 def seed_old_database():
@@ -36,14 +36,7 @@ def seed_old_database():
 
 
 def write_field(description, value):
-    node = wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
-                     n.get('content-desc') == description)
-    tap(node)
-    old = node.get('text', '')
-    adb('shell', 'input', 'keyevent', '123', *(['20'] * (len(old) // 10 + 4)), '123',
-        *(['67'] * (len(old) + 3)))
-    adb('shell', 'input', 'text', value.replace(' ', '%s'))
-    wait_node(lambda n: n.get('class') == 'android.widget.EditText' and n.get('text') == value)
+    type_into_field(named_field(description), value)
 
 
 def native_ok():
@@ -77,6 +70,9 @@ def verify(out):
     long_text = 'Homework details ' + 'Read the next chapter and bring a notebook. ' * 14
     write_field('Текст заметки', long_text.strip())
     tap(text('Сохранить'))
+    # A future day's default display window may not have started yet. All saved
+    # notes remain accessible from the list irrespective of their display window.
+    tap(wait_node(lambda n: n.get('content-desc') == 'Мои заметки'))
     tap(text('Training'))
     text(long_text.strip())
     assert not any(n.get('class') == 'android.widget.EditText' for n in dump().iter('node'))
