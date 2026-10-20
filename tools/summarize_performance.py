@@ -33,6 +33,9 @@ if favorite_result.exists():
 notes_result = root / 'notes' / 'result.txt'
 if notes_result.exists():
     lines += ['## Personal notes and widgets', '', notes_result.read_text().strip(), '']
+intro_result = root / 'widget-intro' / 'result.txt'
+if intro_result.exists():
+    lines += ['## Widget onboarding', '', intro_result.read_text().strip(), '']
 summary = '\n'.join(lines)
 (root / 'summary.md').write_text(summary)
 print(summary)

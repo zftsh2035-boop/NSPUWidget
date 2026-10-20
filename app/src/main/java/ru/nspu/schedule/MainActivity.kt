@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var screenActive by mutableStateOf(false)
     private var navigationRequest by mutableLongStateOf(0L)
     private var incomingNote: NoteEditorRequest? = null
+    private var offerWidgetIntro by mutableStateOf(false)
     private val scheduleKeys = setOf("lessons", "notices", "updated", "error", "change_history",
         "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start", "favorites", "primary_group_id")
     private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -125,6 +126,11 @@ class MainActivity : ComponentActivity() {
             }
             // Refresh existing launcher instances immediately after an APK upgrade.
             ScheduleWidget.renderAll(applicationContext)
+            if (savedInstanceState == null && !intent.hasExtra("open_group_id") &&
+                !intent.getBooleanExtra("show_notices", false) && !intent.getBooleanExtra("show_changes", false)) {
+                val offer = runCatching { WidgetSetup.shouldOffer(applicationContext) }.getOrDefault(false)
+                withContext(Dispatchers.Main) { offerWidgetIntro = offer }
+            }
         }
         if (savedInstanceState == null) handleWidgetIntent(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -211,6 +217,13 @@ class MainActivity : ComponentActivity() {
         val refreshTick = rerender + scheduleRevision // Observe data revision without 15-second global polling.
         var favoritePicker by remember { mutableStateOf(false) }
         var notesVisible by rememberSaveable { mutableStateOf(false) }
+        var widgetHelp by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(offerWidgetIntro) {
+            if (offerWidgetIntro) {
+                widgetHelp = true
+                offerWidgetIntro = false
+            }
+        }
         var editingNote by rememberSaveable(stateSaver = NoteEditorRequestSaver) {
             mutableStateOf<NoteEditorRequest?>(null)
         }
@@ -293,6 +306,8 @@ class MainActivity : ComponentActivity() {
                 editingNote = incomingNote
                 noteError = ""
                 notesVisible = false
+                widgetHelp = false
+                offerWidgetIntro = false
                 pendingFocusGroup = if (incomingNote == null)
                     intent.getIntExtra("open_group_id", -1).takeIf { it > 0 } else null
             }
@@ -391,7 +406,8 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
-                    title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                    title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     actions = {
                         IconButton(onClick = { notesVisible = true }) {
                             Icon(painterResource(R.drawable.ic_note), contentDescription = "Мои заметки")
@@ -628,6 +644,13 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.Bold)
                     }
                     item {
+                        SettingsPanel(title = "Виджет на главном экране") {
+                            Text("Пары, аудитория и заметки — без открытия приложения.",
+                                style = MaterialTheme.typography.bodySmall)
+                            FilledTonalButton(onClick = { widgetHelp = true }) { Text("Добавить виджет") }
+                        }
+                    }
+                    item {
                         SettingsPanel(title = "Канал обновлений") {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(selected = channel == AppSettings.STABLE,
@@ -791,6 +814,11 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+
+        if (widgetHelp) WidgetSetupDialog(onDismiss = {
+            AppSettings.setWidgetIntroSeen(this@MainActivity)
+            widgetHelp = false
+        }, onPin = { WidgetSetup.requestPin(this@MainActivity) })
 
         if (notesVisible) NotesListDialog(savedNotes,
             home.favorites.associate { it.id to it.displayName }, notesListError,

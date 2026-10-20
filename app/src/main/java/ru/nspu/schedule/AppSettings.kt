@@ -59,4 +59,7 @@ object AppSettings {
     fun updatePrompts(c: Context) = prefs(c).getBoolean("update_prompts", true)
     fun setUpdatePrompts(c: Context, enabled: Boolean) =
         prefs(c).edit().putBoolean("update_prompts", enabled).apply()
+
+    fun widgetIntroSeen(c: Context) = prefs(c).getBoolean("widget_intro_seen", false)
+    fun setWidgetIntroSeen(c: Context) = prefs(c).edit().putBoolean("widget_intro_seen", true).apply()
 }

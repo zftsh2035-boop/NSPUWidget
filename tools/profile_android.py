@@ -25,8 +25,18 @@ def adb(*args, binary=False, check=True, payload=None):
 
 
 def dump():
-    adb('shell', 'uiautomator', 'dump', '--compressed', '/sdcard/nspu-window.xml')
-    return ET.fromstring(adb('exec-out', 'cat', '/sdcard/nspu-window.xml'))
+    # API 29's accessibility dumper can race a window transition and crash in
+    # childNafCheck. Retry the observation, never the user action being tested.
+    for attempt in range(3):
+        try:
+            result = adb('shell', 'uiautomator', 'dump', '--compressed', '/sdcard/nspu-window.xml')
+            if 'dumped to' not in result:
+                raise RuntimeError('UIAutomator did not finish a fresh hierarchy dump: ' + result)
+            return ET.fromstring(adb('exec-out', 'cat', '/sdcard/nspu-window.xml'))
+        except (subprocess.CalledProcessError, ET.ParseError, RuntimeError):
+            if attempt == 2:
+                raise
+            time.sleep(.4)
 
 
 def wait_node(predicate, timeout=18):
@@ -72,7 +82,8 @@ def fixture_files(directory):
                      'lessons': json.dumps(lessons, ensure_ascii=False), 'notices': '[]',
                      'change_history': '[]', 'updated': 'Тестовая локальная копия',
                      'schedule_links': json.dumps(links, ensure_ascii=False)},
-        'app-settings': {'theme': 'light', 'auto_scroll': False, 'animate_highlight': True, 'update_prompts': False},
+        'app-settings': {'theme': 'light', 'auto_scroll': False, 'animate_highlight': True,
+                         'update_prompts': False, 'widget_intro_seen': True},
         'app-updates': {'last_stable': int(time.time() * 1000)},
     }
     for name, values in prefs.items():
