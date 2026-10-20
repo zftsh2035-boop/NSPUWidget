@@ -221,7 +221,8 @@ def main():
     parser.add_argument('output', type=Path)
     args = parser.parse_args()
     assert adb('shell', 'getprop', 'ro.kernel.qemu').strip() == '1', 'Use a disposable Android emulator'
-    adb('install', '-r', args.fixture_apk)
+    # Each trial below uninstalls the app before installing the version-1
+    # seeder. Replacing the optimized APK here would be a forbidden downgrade.
     # Park network-constrained WorkManager sync; all public pages are seeded in the cache.
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
