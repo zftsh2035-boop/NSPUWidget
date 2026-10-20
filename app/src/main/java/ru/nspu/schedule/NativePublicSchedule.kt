@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.DayOfWeek
@@ -78,11 +79,15 @@ fun NativePublicSchedule(
             }
         if (needsFetch) {
             refreshing = data != null
-            val fetched = runCatching {
-                withContext(Dispatchers.IO) {
+            val fetched: Result<PublicTimetable> = try {
+                Result.success(withContext(Dispatchers.IO) {
                     PublicTimetableRepository.load(context, page, weekShift, showPast,
                         force = force)
-                }
+                })
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
             }
             fetched.onSuccess {
                 data = it
@@ -197,7 +202,7 @@ fun NativePublicSchedule(
                         if (selectedTab == 0) {
                             for (i in 0..5) {
                                 val perDay = daysData[i]
-                                item(key = "d$i") {
+                                item(key = "d$i", contentType = "day-header") {
                                     Text(dayNames[i] + " · " +
                                         monday.plusDays(i.toLong()).format(fullDate),
                                         style = MaterialTheme.typography.titleSmall,
@@ -206,7 +211,7 @@ fun NativePublicSchedule(
                                         modifier = Modifier.padding(top = 13.dp, bottom = 3.dp))
                                 }
                                 if (perDay.isEmpty()) {
-                                    item(key = "empty$i") {
+                                    item(key = "empty$i", contentType = "empty") {
                                         Text("Нет занятий",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             style = MaterialTheme.typography.bodySmall,
@@ -214,7 +219,7 @@ fun NativePublicSchedule(
                                     }
                                 }
                                 perDay.forEachIndexed { idx, event ->
-                                    item(key = "lesson-$i-$idx") {
+                                    item(key = "lesson-$i-$idx", contentType = "lesson") {
                                         SimpleTimetableLesson(event)
                                     }
                                 }
@@ -222,7 +227,7 @@ fun NativePublicSchedule(
                         } else {
                             val header = if (selectedTab == 1) "Заочные занятия по датам"
                                 else "Сессия · консультации и экзамены"
-                            item(key="heading") {
+                            item(key="heading", contentType = "day-header") {
                                 Text(header, style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(vertical = 8.dp))
@@ -236,7 +241,7 @@ fun NativePublicSchedule(
                             lessons.forEachIndexed { idx, event ->
                                 if (event.date != last) {
                                     last = event.date
-                                    item(key = "date$idx") {
+                                    item(key = "date$idx", contentType = "day-header") {
                                         Text(event.date?.format(fullDate).orEmpty(),
                                             style = MaterialTheme.typography.titleSmall,
                                             color = MaterialTheme.colorScheme.primary,
@@ -244,7 +249,7 @@ fun NativePublicSchedule(
                                             modifier = Modifier.padding(top = 9.dp, bottom = 3.dp))
                                     }
                                 }
-                                item(key = "event$idx") {
+                                item(key = "event$idx", contentType = "lesson") {
                                     SimpleTimetableLesson(event)
                                 }
                             }
@@ -263,6 +268,7 @@ fun NativePublicSchedule(
 
 
 /** Precomputed once per downloaded timetable, not during LazyColumn scroll. */
+@Immutable
 internal data class PublicLessonPresentation(
     val subject: String,
     val time: String,

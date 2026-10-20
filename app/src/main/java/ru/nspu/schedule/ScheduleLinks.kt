@@ -11,13 +11,16 @@ data class ScheduleLink(val kind: ScheduleLinkKind, val label: String, val url: 
 /** Use actual hyperlinks in the official NSPU group page, never guess teacher/room ids. */
 object ScheduleLinks {
     private const val HOST = "https://schedule.nspu.ru"
+    private val punctuation = Regex("""[^\p{L}\p{N}#]+""")
+    private val roomPrefix = Regex("""(?iu)^(?:а\.|ауд\.?|аудитория)\s*""")
+    private val identifier = Regex("""(?:\?|&)id=(\d+)(?:&|$)""")
 
     fun normalized(text: String): String = text.lowercase(java.util.Locale.ROOT)
         .replace('ё', 'е')
-        .replace(Regex("""[^\p{L}\p{N}#]+"""), "")
+        .replace(punctuation, "")
 
     private fun roomLabel(text: String): String = normalized(
-        text.trim().replace(Regex("""(?iu)^(?:а\.|ауд\.?|аудитория)\s*"""), "")
+        text.trim().replace(roomPrefix, "")
     )
 
     fun fromPage(doc: Document): List<ScheduleLink> = doc.select("a[href]").mapNotNull { anchor ->
@@ -27,7 +30,7 @@ object ScheduleLinks {
             href.startsWith("$HOST/room_shedule.php?") -> ScheduleLinkKind.ROOM
             else -> return@mapNotNull null
         }
-        val match = Regex("""(?:\?|&)id=(\d+)(?:&|$)""").find(href)
+        val match = identifier.find(href)
             ?: return@mapNotNull null
         val label = anchor.text().trim().take(120)
         if (label.isBlank()) return@mapNotNull null
@@ -54,6 +57,21 @@ object ScheduleLinks {
         return links.firstOrNull {
             it.kind == ScheduleLinkKind.ROOM && roomLabel(it.label) == wanted
         }?.url
+    }
+
+    /** Normalize the link catalogue once, before creating any visible cards. */
+    class Index(links: List<ScheduleLink>) {
+        private val teachers = links.filter { it.kind == ScheduleLinkKind.TEACHER }
+            .map { normalized(it.label) to it }.filter { it.first.length >= 5 }
+        private val rooms = links.filter { it.kind == ScheduleLinkKind.ROOM }
+            .associateBy { roomLabel(it.label) }
+
+        fun teacher(raw: String): ScheduleLink? {
+            val candidate = normalized(raw)
+            return teachers.firstOrNull { candidate.contains(it.first) }?.second
+        }
+
+        fun room(label: String): ScheduleLink? = rooms[roomLabel(label)]
     }
 
     fun encode(links: List<ScheduleLink>): String = JSONArray().also { array ->

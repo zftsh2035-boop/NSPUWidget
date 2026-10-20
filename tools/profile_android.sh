@@ -1,46 +1,30 @@
 #!/usr/bin/env bash
-# Controlled emulator/USB device smoke profiling. No permanent settings are changed.
+# Same seeded data and gestures for both APKs; fixtures exist only in the test APK.
 set -euo pipefail
 PKG=ru.nspu.schedule
 APK="${1:-app/build/outputs/apk/debug/app-debug.apk}"
-OUT="${2:-performance-results}"
+TEST_APK="${2:-app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk}"
+OUT="${3:-performance-results/current}"
+VERIFY="${4:-true}"
 mkdir -p "$OUT"
 adb wait-for-device
 adb install -r "$APK"
+adb install -r "$TEST_APK"
+adb shell am force-stop "$PKG"
+adb logcat -c
 {
-  echo "App: $PKG"
   echo "Android: $(adb shell getprop ro.build.version.release | tr -d '\r')"
   echo "Device: $(adb shell getprop ro.product.model | tr -d '\r')"
   echo "APK bytes: $(stat -c%s "$APK")"
+  echo "Fixture: 32 lessons/day at home; 48 teacher lessons/week; no HTTP required"
 } > "$OUT/environment.txt"
-
-# Measure cold-ish startup of the same binary five times; avoid comparing emulator
-# numbers to a physical phone or calling these comprehensive energy measurements.
-for i in 1 2 3 4 5; do
-  adb shell am force-stop "$PKG" || true
-  adb shell am start -W -n "$PKG/.MainActivity" >> "$OUT/startup.txt"
-  sleep 1
+adb shell am instrument -w -r -e verifyCards "$VERIFY" \
+  -e class ru.nspu.schedule.ScheduleScrollTest \
+  ru.nspu.schedule.test/androidx.test.runner.AndroidJUnitRunner | tee "$OUT/instrumentation.txt"
+REMOTE="/sdcard/Android/data/$PKG/files/performance"
+for name in home-frames.txt teacher-frames.txt home-memory.txt teacher-memory.txt home.png teacher.png room.png; do
+  adb pull "$REMOTE/$name" "$OUT/$name" || true
 done
-
-adb shell dumpsys meminfo "$PKG" > "$OUT/memory.txt"
-adb shell dumpsys gfxinfo "$PKG" reset >/dev/null
-adb shell input swipe 500 1200 500 380 350 || true
-adb shell input swipe 500 1200 500 380 350 || true
-adb shell dumpsys gfxinfo "$PKG" > "$OUT/frames.txt"
-adb shell dumpsys cpuinfo > "$OUT/cpu-snapshot.txt"
-adb exec-out screencap -p > "$OUT/app-screen.png"
-{
-  echo "# Android emulator/device performance smoke test"
-  echo
-  echo "The measurements below are hardware- and thermal-dependent; they are not a battery-life benchmark."
-  echo
-  echo "## Startup samples (ms)"
-  grep -E 'TotalTime:|WaitTime:' "$OUT/startup.txt" || true
-  echo
-  echo "## Memory (system PSS)"
-  grep -E 'TOTAL PSS:|TOTAL RSS:|TOTAL ' "$OUT/memory.txt" | tail -n 8 || true
-  echo
-  echo "## UI frames"
-  grep -E 'Total frames rendered:|Janky frames:|90th percentile:|95th percentile:' "$OUT/frames.txt" || true
-} > "$OUT/summary.md"
-cat "$OUT/summary.md"
+adb logcat -d > "$OUT/logcat.txt"
+grep -q '^OK (' "$OUT/instrumentation.txt"
+! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed' "$OUT/instrumentation.txt"

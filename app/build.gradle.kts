@@ -2,7 +2,12 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "ru.nspu.schedule"
     compileSdk = 35
-    defaultConfig { applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35; versionCode = 19; versionName = "2.7"; buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: "unknown"}\"") }
+    defaultConfig {
+        applicationId = "ru.nspu.schedule"; minSdk = 26; targetSdk = 35
+        versionCode = 20; versionName = "2.8"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: "unknown"}\"")
+    }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
@@ -21,7 +26,9 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            // Installable optimized debug APK until a persistent release key is configured.
+            // Debug-signed for installation, but without the debuggable runtime overhead.
+            // R8 alone does not disable Android/Compose development checks.
+            isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -38,6 +45,10 @@ android {
 }
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core-ktx:1.15.0")

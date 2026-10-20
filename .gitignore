@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+local.properties
+performance-results/
+__pycache__/

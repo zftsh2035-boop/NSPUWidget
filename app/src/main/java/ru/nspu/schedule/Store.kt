@@ -58,6 +58,21 @@ object Store {
     fun focus(c: Context, now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): FocusedLesson? =
         LessonFocus.choose(now) { day -> forDate(c, day) }
 
+    /** Call from a worker dispatcher: no preference access or parsing in lazy rows. */
+    internal fun homeSnapshot(c: Context): HomeScheduleSnapshot {
+        val now = java.time.LocalDateTime.now(ZONE)
+        val focused = focus(c, now)
+        val date = chosenDate(c, now.toLocalDate())
+            ?: DayNavigation.visible(now.toLocalDate(), null, focused?.date)
+        val lessons = forDate(c, date)
+        val links = ScheduleLinks.Index(currentLinks(c))
+        val start = termStart(c)
+        return HomeScheduleSnapshot(date, lessons,
+            lessons.associateWith { it.present(date, start, links) },
+            DayTimeline.build(lessons), focused, notices(c), scheduleGroupName(c),
+            group(c), availableSubgroups(c), changeHistory(c), status(c), error(c))
+    }
+
     /** Null = automatic next-lesson day; non-null = user's explicit calendar day.
      * Import older offset prefs only if nonzero; 0 used to mean automatic selection.
      */

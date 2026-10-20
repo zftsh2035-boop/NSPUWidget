@@ -17,6 +17,14 @@ object SiteParser {
     private val datePattern = Regex("(?<!\\d)([0-3]?\\d)\\.([01]?\\d)\\.(20\\d{2})(?:\\s*г\\.)?")
     private val weeksPattern = Regex("\\(([^)]*нед\\.[^)]*)\\)", RegexOption.IGNORE_CASE)
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
+    private val weekNumbers = Regex("(\\d+)(?:\\s*-\\s*(\\d+))?")
+    private val languagePattern = Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
+    private val examPattern = Regex("""(?i)(?<![а-яё])экз\.?(?![а-яё])""")
+    private val creditPattern = Regex("""(?i)(?<![а-яё])зач\.?(?![а-яё])""")
+    private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
+    private val rangePart = Regex("""\d+\s*[-–]\s*\d+|\d+""")
+    private val numberPattern = Regex("""\d+""")
+    private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
 
     fun parse(text: String, selectedGroup: String = "3.008.2.26"): PageSnapshot {
         val flat = text.replace('\u00a0', ' ').replace(Regex("\\s+"), " ").trim()
@@ -102,7 +110,7 @@ object SiteParser {
             val d = dateMatch.groupValues
             return date.dayOfMonth == d[1].toInt() && date.monthValue == d[2].toInt() && date.year == d[3].toInt()
         }
-        return Regex("(\\d+)(?:\\s*-\\s*(\\d+))?").findAll(weeks).any { m ->
+        return weekNumbers.findAll(weeks).any { m ->
             val first = m.groupValues[1].toInt()
             val last = m.groupValues[2].toIntOrNull() ?: first
             week in first..last
@@ -112,8 +120,7 @@ object SiteParser {
     /** Only codes actually mentioned next to a language lesson are selectable. */
     fun languageOptions(lessons: List<Lesson>): List<String> {
         val languageLessons = lessons.filter {
-            Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
-                .containsMatchIn(it.raw)
+            languagePattern.containsMatchIn(it.raw)
         }
         val groups = languageLessons.flatMap { subgroupPattern.findAll(it.raw).map { m -> "А" + m.groupValues[1] }.toList() }
             .distinct().sortedBy { it.drop(1).toIntOrNull() ?: 999 }
@@ -146,16 +153,13 @@ object SiteParser {
     /** Resolves multiple event types in one official slot for the selected calendar week. */
     fun lessonKind(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): String {
         val raw = lesson.raw
-        if (raw.contains("экзамен", ignoreCase = true) || Regex("""(?i)(?<![а-яё])экз\.?(?![а-яё])""").containsMatchIn(raw)) return "ЭКЗАМЕН"
-        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true) || Regex("""(?i)(?<![а-яё])зач\.?(?![а-яё])""").containsMatchIn(raw)) return "ЗАЧЁТ"
+        if (raw.contains("экзамен", ignoreCase = true) || examPattern.containsMatchIn(raw)) return "ЭКЗАМЕН"
+        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true) || creditPattern.containsMatchIn(raw)) return "ЗАЧЁТ"
         val week = academicWeek(date, termStart)
-        val typeParts = Regex(
-            """(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""",
-            RegexOption.IGNORE_CASE
-        ).findAll(raw).toList()
+        val typeParts = typePartsPattern.findAll(raw).toList()
         val matched = typeParts.firstOrNull { match ->
-            Regex("""\d+\s*[-–]\s*\d+|\d+""").findAll(match.groupValues[2]).any { part ->
-                val ends = Regex("""\d+""").findAll(part.value).map { it.value.toInt() }.toList()
+            rangePart.findAll(match.groupValues[2]).any { part ->
+                val ends = numberPattern.findAll(part.value).map { it.value.toInt() }.toList()
                 week in ends.first()..ends.last()
             }
         }?.groupValues?.get(1) ?: typeParts.firstOrNull()?.groupValues?.get(1)
@@ -173,8 +177,7 @@ object SiteParser {
         val subject = l.raw.substringBefore(',').trim()
         val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim()
         val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
-        val room = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
-            .find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
+        val room = roomPattern.find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
         return LessonInfo(subject, teacher, room, lessonKind(l, date, termStart))
     }
 

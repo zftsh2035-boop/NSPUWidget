@@ -11,14 +11,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.CornerRadius
 import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,8 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -54,12 +50,17 @@ private val Amber = Color(0xFFC07816)
 class MainActivity : ComponentActivity() {
     private var scheduleRevision by mutableIntStateOf(0)
     private var screenActive by mutableStateOf(false)
+    private val scheduleKeys = setOf("lessons", "notices", "updated", "error", "change_history",
+        "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start")
     private val scheduleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key in setOf("lessons", "notices", "updated", "error", "change_history",
-                "group_id", "subgroup", "offset", "selected_date", "schedule_links", "term_start")) {
+        if (key in scheduleKeys) {
             if (Looper.myLooper() == Looper.getMainLooper()) scheduleRevision++
             else runOnUiThread { scheduleRevision++ }
         }
+    }
+
+    private fun refreshWidgets() {
+        lifecycleScope.launch(Dispatchers.IO) { ScheduleWidget.renderAll(applicationContext) }
     }
 
     override fun onResume() {
@@ -81,8 +82,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         getSharedPreferences("schedule", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(scheduleListener)
-        Sync.schedule(this)
-        if (Store.cached(this).isEmpty() || Store.missingScheduleLinks(this)) Sync.now(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            Sync.schedule(applicationContext)
+            if (Store.cached(applicationContext).isEmpty() || Store.missingScheduleLinks(applicationContext)) {
+                Sync.now(applicationContext)
+            }
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
@@ -161,21 +166,10 @@ class MainActivity : ComponentActivity() {
     private fun AppScreen(currentTheme: String, changeTheme: (String) -> Unit,
         onOpenSchedule: (OfficialSchedulePage) -> Unit) {
         var rerender by remember { mutableIntStateOf(0) }
-        // A whole-screen refresh happens only on actual data changes, navigation or
-        // class boundaries. The minute countdown is updated inside the focused card.
-        LaunchedEffect(screenActive) {
-            if (screenActive) {
-                while (true) {
-                    val at = LocalDateTime.now(ZONE)
-                    val next = LessonFocus.transitionAt(at, Store.focus(this@MainActivity, at))
-                    val wait = if (next != null) Duration.between(at, next).toMillis() + 1200L
-                        else 60L * 60L * 1000L
-                    delay(wait.coerceIn(1200L, 60L * 60L * 1000L))
-                    scheduleRevision++
-                }
-            }
-        }
         val refreshTick = rerender + scheduleRevision // Observe data revision without 15-second global polling.
+        val snapshot by produceState<HomeScheduleSnapshot?>(null, refreshTick) {
+            value = withContext(Dispatchers.Default) { Store.homeSnapshot(applicationContext) }
+        }
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
         var channel by remember { mutableStateOf(AppSettings.channel(this@MainActivity)) }
@@ -207,41 +201,50 @@ class MainActivity : ComponentActivity() {
             })
         }
         val listState = rememberLazyListState()
-        // Avoid running expensive highlight/background animations during vertical scroll.
-        val listScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
-        val date = remember(refreshTick) { Store.date(this) }
-        val lessons = remember(refreshTick, date) { Store.forDate(this, date) }
-        val timeline = remember(lessons) { DayTimeline.build(lessons) }
-        val notices = remember(refreshTick) { Store.notices(this) }
-        val group = remember(refreshTick) { Store.scheduleGroupName(this) }
-        val subgroup = remember(refreshTick) { Store.group(this) }
-        val availableSubgroups = remember(refreshTick) { Store.availableSubgroups(this) }
-        val focusedLesson = remember(refreshTick) { Store.focus(this) }
+        // Pass State without reading it here: scrolling must not recompose AppScreen.
+        val listScrolling = remember { derivedStateOf { listState.isScrollInProgress } }
+        val home = snapshot
+        if (home == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return
+        }
+        val date = home.date
+        val lessons = home.lessons
+        val timeline = home.timeline
+        val notices = home.notices
+        val group = home.group
+        val subgroup = home.subgroup
+        val availableSubgroups = home.availableSubgroups
+        val focusedLesson = home.focus
+        LaunchedEffect(screenActive, focusedLesson, refreshTick) {
+            if (screenActive) {
+                val at = LocalDateTime.now(ZONE)
+                val next = LessonFocus.transitionAt(at, focusedLesson)
+                val wait = if (next != null) Duration.between(at, next).toMillis() + 1200L
+                    else 60L * 60L * 1000L
+                delay(wait.coerceIn(1200L, 60L * 60L * 1000L))
+                scheduleRevision++
+            }
+        }
         // Prewarm only the next teacher's public timetable while a student is
         // already reading their group schedule. One bounded request, not a crawl
         // of all university teachers, and never on the Compose main thread.
-        LaunchedEffect(date, group, screenActive, selectedTab) {
+        LaunchedEffect(home.cards, screenActive, selectedTab) {
             if (!screenActive || selectedTab != 0) return@LaunchedEffect
             delay(1700)
-            val page = withContext(Dispatchers.Default) {
-                lessons.asSequence().mapNotNull { lesson ->
-                    Store.teacherScheduleUrl(this@MainActivity, lesson.raw)
-                        ?.let { url ->
-                            val name = Store.teacherNameForLesson(this@MainActivity, lesson.raw)
-                                ?: "Преподаватель"
-                            OfficialSchedulePage.fromUrl(url, name)
-                        }
-                }.firstOrNull()
-            } ?: return@LaunchedEffect
+            val page = home.cards.values.firstNotNullOfOrNull { it.teacherPage }
+                ?: return@LaunchedEffect
             withContext(Dispatchers.IO) {
                 runCatching {
                     PublicTimetableRepository.load(this@MainActivity.applicationContext, page, 0)
                 }
             }
         }
-        val changes = remember(refreshTick) { Store.changeHistory(this) }
-        val lastUpdate = remember(refreshTick) { Store.status(this) }
-        val error = remember(refreshTick) { Store.error(this) }
+        val changes = home.changes
+        val lastUpdate = home.updated
+        val error = home.error
         var picker by remember { mutableIntStateOf(0) }
         var working by remember { mutableStateOf(false) }
         var pickerError by remember { mutableStateOf("") }
@@ -330,7 +333,7 @@ class MainActivity : ComponentActivity() {
                         val direction = DaySwipe.direction(draggedPx, 64.dp.toPx())
                         if (direction != 0) {
                             Store.offset(this@MainActivity, direction)
-                            ScheduleWidget.renderAll(this@MainActivity)
+                            refreshWidgets()
                             rerender++
                         }
                         draggedPx = 0f
@@ -388,7 +391,7 @@ class MainActivity : ComponentActivity() {
                                 if (active) Button(
                                     onClick = {
                                         Store.jump(this@MainActivity, daysFromToday)
-                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        refreshWidgets()
                                         rerender++
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -396,7 +399,7 @@ class MainActivity : ComponentActivity() {
                                 else OutlinedButton(
                                     onClick = {
                                         Store.jump(this@MainActivity, daysFromToday)
-                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        refreshWidgets()
                                         rerender++
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -440,17 +443,20 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
-                    items(timeline, key = { row ->
+                    items(timeline, contentType = { row ->
+                        if (row is DayRow.LessonRow) "lesson" else "window"
+                    }, key = { row ->
                         when (row) {
                             is DayRow.LessonRow -> "lesson:" + row.lesson.time + ":" + row.lesson.raw
                             is DayRow.WindowRow -> "window:" + row.start + ":" + row.end
                         }
                     }) { row ->
                         when (row) {
-                            is DayRow.LessonRow -> LessonCard(row.lesson, date,
+                            is DayRow.LessonRow -> LessonCard(home.cards.getValue(row.lesson),
                                 LessonFocus.matches(focusedLesson, date, row.lesson),
-                                focusedLesson?.ongoing == true, animateHighlight && !listScrolling,
-                                screenActive, onOpenSchedule)
+                                focusedLesson?.ongoing == true, animateHighlight,
+                                screenActive, currentTheme == AppSettings.NEON,
+                                listScrolling, onOpenSchedule)
                             is DayRow.WindowRow -> GapCard(row)
                         }
                     }
@@ -462,7 +468,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
                             TextButton(onClick = {
                                 Store.markAllRead(this@MainActivity)
-                                ScheduleWidget.renderAll(this@MainActivity)
+                                refreshWidgets()
                                 rerender++
                             }) { Text("Прочитано") }
                         }
@@ -694,7 +700,7 @@ class MainActivity : ComponentActivity() {
                                 Text(option.title, modifier = Modifier.fillMaxWidth()
                                     .clickable {
                                         Store.selectScheduleGroup(this@MainActivity, option.id, option.title)
-                                        ScheduleWidget.renderAll(this@MainActivity)
+                                        refreshWidgets()
                                         Sync.now(this@MainActivity)
                                         picker = 0
                                         rerender++
@@ -718,7 +724,7 @@ class MainActivity : ComponentActivity() {
                         items(listOf("Все") + availableSubgroups) { name ->
                             Text(name, modifier = Modifier.fillMaxWidth().clickable {
                                 Store.setGroup(this@MainActivity, name)
-                                ScheduleWidget.renderAll(this@MainActivity)
+                                refreshWidgets()
                                 subgroupPicker = false
                                 rerender++
                             }.padding(12.dp))
@@ -818,135 +824,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    private fun LessonCard(lesson: Lesson, date: LocalDate, highlighted: Boolean,
-        ongoing: Boolean, animateHighlight: Boolean, active: Boolean,
-        onOpenSchedule: (OfficialSchedulePage) -> Unit) {
-        // Keep minute updates local to this one visible card instead of recomposing the
-        // entire schedule every 15 seconds.
-        var minuteTick by remember(lesson.time, date) { mutableIntStateOf(0) }
-        LaunchedEffect(highlighted, active, lesson.time, date) {
-            if (highlighted && active) while (true) {
-                val millis = System.currentTimeMillis()
-                delay(60_000L - (millis % 60_000L) + 150L)
-                minuteTick++
-            }
-        }
-        val tick = minuteTick
-        val now = remember(tick, highlighted, active) { LocalDateTime.now(ZONE) }
-        val data = remember(lesson, date) {
-            SiteParser.details(lesson, date, Store.termStart(this@MainActivity))
-        }
-        val accent = Color(if (AppSettings.theme(this@MainActivity) == AppSettings.NEON)
-            WidgetTheme.lessonAccent(data.kind, WidgetMode.NEON)
-            else SiteParser.lessonColor(data.kind))
-        val timing = if (highlighted) FocusDisplay.of(now, FocusedLesson(date, lesson, ongoing)) else null
-        // Only the focused card pulses. Compose stops driving frames when the activity
-        // is not visible; the Android home-screen widget deliberately remains static.
-        val pulse = if (highlighted && active && animateHighlight && android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            val transition = rememberInfiniteTransition(label = "focused_lesson_pulse")
-            val fraction by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "focus_brightness"
-            )
-            fraction
-        } else 0.7f
-        val focusFill = lerp(
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.primary,
-            0.05f + 0.19f * pulse
-        )
-        Surface(shape = RoundedCornerShape(21.dp),
-            tonalElevation = if (highlighted) 9.dp else 2.dp,
-            color = if (highlighted) focusFill else MaterialTheme.colorScheme.surface,
-            border = if (highlighted) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                else BorderStroke(1.dp, accent.copy(alpha = .34f)),
-            modifier = Modifier.fillMaxWidth()) {
-            // drawBehind paints the accent at full row height without expensive
-            // IntrinsicSize.Min two-pass measurement for every lesson card.
-            Row(Modifier.fillMaxWidth().drawBehind {
-                val stripe = 5.dp.toPx()
-                drawRoundRect(color = accent, topLeft = Offset.Zero,
-                    size = Size(stripe, size.height),
-                    cornerRadius = CornerRadius(2.dp.toPx()))
-            }) {
-                Spacer(Modifier.width(5.dp))
-                Column(Modifier.width(84.dp).padding(start = 12.dp, top = 14.dp)) {
-                    Text(lesson.time.substringBefore('-'), fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text(lesson.time.substringAfter('-', ""), fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Column(Modifier.weight(1f).padding(vertical = 12.dp, horizontal = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(color = accent.copy(alpha = .18f),
-                            shape = RoundedCornerShape(8.dp)) {
-                            Text(SiteParser.shortKind(data.kind), fontSize = 12.sp,
-                                color = accent, fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp))
-                        }
-                        if (lesson.changed) {
-                            Spacer(Modifier.width(7.dp))
-                            Text("● ЗАМЕНА", color = MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    if (highlighted) {
-                        Spacer(Modifier.height(7.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("●", color = MaterialTheme.colorScheme.primary.copy(
-                                alpha = 0.22f + 0.78f * pulse
-                            ), fontSize = 16.sp, fontWeight = FontWeight.Black)
-                            Spacer(Modifier.width(5.dp))
-                            Text(timing?.label ?: "Ближайшая пара",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
-                        }
-                    }
-                    if (highlighted && timing != null) {
-                        Spacer(Modifier.height(5.dp))
-                        LinearProgressIndicator(progress = { timing.progress },
-                            modifier = Modifier.fillMaxWidth().height(4.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .15f))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(data.subject, style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(5.dp))
-                    val teacherName =
-                        Store.teacherNameForLesson(this@MainActivity, lesson.raw) ?: data.teacher
-                    val teacherUrl = Store.teacherScheduleUrl(this@MainActivity, lesson.raw)
-                    val roomUrl = Store.roomScheduleUrl(this@MainActivity, data.room)
-                    Text(
-                        teacherName + if (teacherUrl != null) " ↗" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (teacherUrl != null) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = if (teacherUrl != null) Modifier.clickable {
-                            OfficialSchedulePage.fromUrl(teacherUrl, teacherName)
-                                ?.let(onOpenSchedule)
-                        } else Modifier
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Surface(shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = if (roomUrl != null) Modifier.clickable {
-                            OfficialSchedulePage.fromUrl(roomUrl, "Ауд. " + data.room)
-                                ?.let(onOpenSchedule)
-                        } else Modifier
-                    ) {
-                        Text("Ауд. " + data.room + if (roomUrl != null) " ↗" else "",
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
-    }
 }
