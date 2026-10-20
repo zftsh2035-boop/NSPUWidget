@@ -146,7 +146,7 @@ def run(apk, out, verify):
     adb('install', '-r', '-d', apk)
     adb('logcat', '-c')
     try:
-        launch = adb('shell', 'am', 'start', '-S', '-W', '--activity-clear-task', '--activity-new-task',
+        launch = adb('shell', 'am', 'start', '-S', '-W', '-f', '0x10008000',
                      '-n', PKG + '/.MainActivity')
         (out / 'startup.txt').write_text(launch)
         text('ТВОЯ ГРУППА')
