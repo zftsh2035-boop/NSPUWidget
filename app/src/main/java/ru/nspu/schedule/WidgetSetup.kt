@@ -1,6 +1,12 @@
 package ru.nspu.schedule
 
 import android.appwidget.AppWidgetManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.os.Bundle
+import android.widget.RemoteViews
+import kotlinx.coroutines.*
 import android.content.ComponentName
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
@@ -30,8 +36,19 @@ internal object WidgetSetup {
     /** A user click opens the launcher's own confirmation. It never pins silently. */
     fun requestPin(c: Context): Boolean = runCatching {
         val manager = AppWidgetManager.getInstance(c)
-        manager.isRequestPinAppWidgetSupported &&
-            manager.requestPinAppWidget(ComponentName(c, ScheduleWidget::class.java), null, null)
+        if (!manager.isRequestPinAppWidgetSupported) return@runCatching false
+        val preview = RemoteViews(c.packageName, R.layout.widget_compact_tiny).apply {
+            setTextViewText(R.id.compactHeader, "НГПУ")
+            setTextViewText(R.id.compactSubject, "Расписание и заметки")
+            setTextViewText(R.id.compactTime, "Размер можно менять")
+            setTextViewText(R.id.compactTeacher, "Выбирай избранную группу кнопкой ☆")
+        }
+        val extras = Bundle().apply { putParcelable(AppWidgetManager.EXTRA_APPWIDGET_PREVIEW, preview) }
+        // The launcher fills EXTRA_APPWIDGET_ID into this explicit private callback.
+        val success = PendingIntent.getBroadcast(c, 701,
+            Intent(c, WidgetPinnedReceiver::class.java).putExtra("group_id", Store.scheduleGroupId(c)),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        manager.requestPinAppWidget(ComponentName(c, ScheduleWidget::class.java), extras, success)
     }.onFailure { android.util.Log.w("NSPUWidget", "Launcher pin request unavailable", it) }.getOrDefault(false)
 }
 
@@ -65,4 +82,21 @@ internal fun WidgetSetupDialog(onDismiss: () -> Unit, onPin: () -> Boolean) {
                 Text(if (manual) "Назад" else "Позже")
             }
         })
+}
+
+
+class WidgetPinnedReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
+        val manager = AppWidgetManager.getInstance(context)
+        if (id < 0 || manager.getAppWidgetInfo(id)?.provider != ComponentName(context, ScheduleWidget::class.java)) return
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                WidgetSettings.select(context, id, intent.getIntExtra("group_id", -1))
+                ScheduleWidget.renderAll(context)
+            } catch (e: Exception) { android.util.Log.e("NSPUWidget", "Pinned widget refresh failed", e) }
+            finally { pending.finish() }
+        }
+    }
 }

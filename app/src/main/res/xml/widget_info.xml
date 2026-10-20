@@ -3,5 +3,6 @@
     android:minResizeWidth="155dp" android:minResizeHeight="95dp"
     android:targetCellWidth="3" android:targetCellHeight="2"
     android:initialLayout="@layout/widget_compact_tiny"
+    android:previewLayout="@layout/widget_compact_tiny"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" android:updatePeriodMillis="0" />

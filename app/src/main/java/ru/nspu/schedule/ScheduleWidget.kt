@@ -11,6 +11,7 @@ import android.content.Intent
 import android.net.Uri
 import android.view.View
 import android.widget.RemoteViews
+import android.util.SizeF
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -32,8 +33,8 @@ class ScheduleWidget : AppWidgetProvider() {
         Sync.schedule(context)
         ids.forEach { id ->
             val data = Store.data(context, WidgetSettings.groupId(context, id))
-            if (data.cached().isEmpty()) Sync.now(context, data.id)
             render(context, manager, id)
+            if (data.cached().isEmpty()) Sync.now(context, data.id)
         }
         FocusClock.schedule(context)
     }
@@ -117,15 +118,13 @@ class ScheduleWidget : AppWidgetProvider() {
             return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE))
         }
-        private fun renderPicker(context: Context, manager: AppWidgetManager, widgetId: Int) {
+        private fun renderPicker(context: Context, widgetId: Int, height: Int): RemoteViews {
             val colors = WidgetTheme.palette(context)
             val v = RemoteViews(context.packageName, R.layout.widget_groups)
             v.setInt(R.id.widgetRoot, "setBackgroundResource", colors.panel)
             v.setTextColor(R.id.groupsTitle, colors.ink)
             v.setTextColor(R.id.groupsClose, colors.accent)
             v.setTextColor(R.id.manageFavorites, colors.accent)
-            val height = manager.getAppWidgetOptions(widgetId)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
             if (height < 200) v.setViewVisibility(R.id.manageFavorites, View.GONE)
             v.setOnClickPendingIntent(R.id.groupsClose, action(context, widgetId, "close"))
             v.setOnClickPendingIntent(R.id.manageFavorites,
@@ -134,22 +133,39 @@ class ScheduleWidget : AppWidgetProvider() {
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                 .setData(Uri.parse("nspuwidget://favorites/$widgetId")))
             v.setPendingIntentTemplate(R.id.favoriteList, action(context, widgetId, "select", mutable = true))
-            manager.updateAppWidget(widgetId, v)
-            manager.notifyAppWidgetViewDataChanged(widgetId, R.id.favoriteList)
+            return v
         }
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
-            if (WidgetSettings.pickerOpen(context, widgetId)) {
-                renderPicker(context, manager, widgetId)
-                return
+            val options = manager.getAppWidgetOptions(widgetId)
+            val views = if (Build.VERSION.SDK_INT >= 31) {
+                @Suppress("DEPRECATION")
+                val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                    .orEmpty().filter { it.width > 0 && it.height > 0 }.take(16)
+                // If the host has not supplied sizes, let it choose a responsive layout itself.
+                val supported = sizes.ifEmpty { listOf(SizeF(155f, 95f), SizeF(185f, 170f),
+                    SizeF(185f, 210f), SizeF(185f, 345f)) }
+                RemoteViews(supported.associateWith {
+                    createViews(context, widgetId, it.width.toInt(), it.height.toInt())
+                })
+            } else {
+                fun size(landscape: Boolean) = WidgetLayoutSize.fallback(
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT),
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT), landscape)
+                val portrait = size(false); val landscape = size(true)
+                RemoteViews(createViews(context, widgetId, landscape.width, landscape.height),
+                    createViews(context, widgetId, portrait.width, portrait.height))
             }
+            manager.updateAppWidget(widgetId, views)
+            manager.notifyAppWidgetViewDataChanged(widgetId,
+                if (WidgetSettings.pickerOpen(context, widgetId)) R.id.favoriteList else R.id.lessonList)
+        }
+        private fun createViews(context: Context, widgetId: Int, widthDp: Int, heightDp: Int): RemoteViews {
+            if (WidgetSettings.pickerOpen(context, widgetId)) return renderPicker(context, widgetId, heightDp)
             val view = WidgetSettings.view(context, widgetId)
             val data = view.data
             val favorite = Favorites.find(context, data.id)
-            val options = manager.getAppWidgetOptions(widgetId)
-            val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
-                .takeIf { it > 0 } ?: 300
-            val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 220)
-                .takeIf { it > 0 } ?: 220
             val compact = heightDp < 210
             val tiny = heightDp < 170 || widthDp < 185
             val medium = heightDp in 210..344
@@ -190,27 +206,36 @@ class ScheduleWidget : AppWidgetProvider() {
                     val cards = prepareLessonCards(data.id, focus.date, data.forDate(focus.date),
                         data.termStart(), ScheduleLinks.Index(data.currentLinks()), notes)
                     val card = cards[focus.lesson]
-                    val note = card?.note
+                    val today = java.time.LocalDate.now(ZONE)
+                    val todayNotes = if (focus.date == today) notes else runCatching {
+                        Notes.forDay(context, data.id, today)
+                    }.getOrDefault(emptyList())
+                    val todayEvent = todayNotes.firstOrNull { it.target.isDay }
+                    val lessonNote = card?.note?.takeIf { it.options.visibleOn(focus.date) }
+                    val note = if (focus.date == today) lessonNote ?: todayEvent else todayEvent ?: lessonNote
                     if (note != null) {
                         v.setTextViewText(R.id.compactTeacher, "Заметка: " + note.preview)
                         v.setTextColor(R.id.compactTeacher, widgetPalette.accent)
                         v.setInt(R.id.compactTeacher, "setMaxLines", if (tiny) 1 else 2)
                     }
                     v.setOnClickPendingIntent(R.id.compactTeacher,
-                        if (note != null) open(context, widgetId, data.id, noteTarget = card?.noteTarget, note = note)
+                        if (note != null) open(context, widgetId, data.id, noteTarget = note.target, note = note)
                         else open(context, widgetId, data.id))
                 } else {
-                    v.setTextViewText(R.id.compactSubject, "Расписание пока не загружено")
-                    v.setTextViewText(R.id.compactTeacher, "Нажми, чтобы открыть приложение")
-                    v.setTextViewText(R.id.compactTime, "")
+                    val dayNote = runCatching { Notes.forDay(context, data.id, java.time.LocalDate.now(ZONE)) }
+                        .getOrDefault(emptyList()).firstOrNull { it.target.isDay }
+                    v.setTextViewText(R.id.compactSubject, dayNote?.target?.subject ?: "Расписание пока не загружено")
+                    v.setTextViewText(R.id.compactTeacher, dayNote?.preview ?: "Нажми, чтобы открыть приложение")
+                    v.setTextViewText(R.id.compactTime, if (dayNote != null) "Заметка на день" else "")
+                    if (dayNote != null) v.setOnClickPendingIntent(R.id.compactTeacher,
+                        open(context, widgetId, data.id, noteTarget = dayNote.target, note = dayNote))
                     v.setTextViewText(R.id.compactKind, "")
                     v.setTextViewText(R.id.compactRoom, "")
                 }
                 v.setOnClickPendingIntent(R.id.compactRoot, open(context, widgetId, data.id))
                 v.setTextColor(R.id.groups, widgetPalette.accent)
                 v.setOnClickPendingIntent(R.id.groups, action(context, widgetId, "groups"))
-                manager.updateAppWidget(widgetId, v)
-                return
+                return v
             }
             val v = RemoteViews(context.packageName, R.layout.widget)
             v.setInt(R.id.widgetRoot, "setBackgroundResource", widgetPalette.panel)
@@ -274,8 +299,7 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.header, open(context, widgetId, data.id))
             v.setPendingIntentTemplate(R.id.lessonList, open(context, widgetId, data.id, mutable = true))
             v.setOnClickPendingIntent(R.id.noticeBox, open(context, widgetId, data.id, notices = true))
-            manager.updateAppWidget(widgetId, v)
-            manager.notifyAppWidgetViewDataChanged(widgetId, R.id.lessonList)
+            return v
         }
     }
 }

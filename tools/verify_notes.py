@@ -19,6 +19,9 @@ def save_ui(out, name):
 
 
 def field():
+    root = dump()
+    if not any(n.get('class') == 'android.widget.EditText' for n in root.iter('node')):
+        tap(text('Изменить'))
     return wait_node(lambda n: n.get('class') == 'android.widget.EditText')
 
 
@@ -130,6 +133,7 @@ def verify(out):
     # Collection fill-in intent: open the exact dated class, not the app's live focus.
     adb('shell', 'am', 'force-stop', PKG)
     tap(full_note('Bring bandages'))
+    tap(text('Изменить'))
     text('Личная заметка')
     assert field().get('text') == 'Bring bandages', 'Cold widget link lost its note'
     type_note('Bring bandages and notebook')
@@ -137,6 +141,7 @@ def verify(out):
     start_host()
     full_note('Bring bandages and notebook')
     tap(note_text('Bring bandages and notebook', compact=True))
+    tap(text('Изменить'))
     text('Личная заметка')
     assert field().get('text') == 'Bring bandages and notebook', 'Warm compact link opened another note'
 
@@ -210,14 +215,16 @@ def verify(out):
     tap(favorites_button())
     tap(text(CODES[0]))
     tap(find_lesson_note_button(subject))
-    wait_node(lambda n: n.get('text', '').endswith('\n' + CODES[0]))
+    wait_node(lambda n: n.get('text') == CODES[0])
     assert field().get('text', '') == '', 'Note leaked into another group'
     type_note('Friend notebook')
     save_note()
     tap(wait_node(lambda n: n.get('content-desc') == 'Мои заметки'))
     text('Friend notebook')
     tap(text('Bring bandages and notebook'))
+    field()
     tap(text('Удалить заметку'))
+    tap(text('Удалить'))
     text('Friend notebook')
     assert not any(n.get('text') == 'Bring bandages and notebook' for n in dump().iter('node'))
     save_ui(out, 'deleted-note-other-group-kept')

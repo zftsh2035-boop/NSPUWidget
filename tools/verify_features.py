@@ -14,6 +14,7 @@ scripts = Path(__file__).parent
 checks = [
     ('widget-intro', 'verify_widget_intro.py', [args.fixture_apk, args.current_apk]),
     ('notes', 'verify_notes.py', [args.fixture_apk, args.current_apk, args.host_apk]),
+    ('planner', 'verify_planner.py', [args.fixture_apk, args.current_apk, args.host_apk]),
     ('favorites', 'verify_favorites.py', [args.fixture_apk, args.current_apk, args.host_apk]),
 ]
 failures = []

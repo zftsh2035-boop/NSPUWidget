@@ -9,6 +9,7 @@ on:
       - tools/widget-host/**
       - tools/verify_favorites.py
       - tools/verify_notes.py
+      - tools/verify_planner.py
       - tools/verify_widget_intro.py
       - tools/verify_features.py
       - tools/*performance*.py

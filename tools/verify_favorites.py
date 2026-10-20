@@ -101,7 +101,7 @@ def verify(out):
     wait_node(lambda n: n.get('resource-id', '').endswith(':id/header') and n.get('text') != initial_header)
     compact_is(PRIMARY)
     adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
-    text('ТВОЯ ГРУППА')
+    text('Расписание НГПУ')
     today = datetime.now(ZoneInfo('Asia/Novosibirsk')).date()
     selected = today + timedelta(days=1) if today.weekday() == 6 else today
     months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']

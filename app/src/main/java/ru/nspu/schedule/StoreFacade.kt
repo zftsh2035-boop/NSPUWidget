@@ -60,7 +60,7 @@ object Store {
     internal fun homeSnapshot(c: Context, id: Int = scheduleGroupId(c)) =
         ScheduleView(data(c, id), prefs(c)).homeSnapshot(Favorites.list(c), Favorites.primaryId(c)) {
             date -> Notes.forDay(c, id, date)
-        }
+        }.copy(nextNoteBoundary = runCatching { Notes.nextBoundary(c, id) }.getOrNull())
     fun cached(c: Context) = data(c).cached()
     fun missingScheduleLinks(c: Context) = data(c).missingScheduleLinks()
     fun source(c: Context) = data(c).source()
@@ -101,6 +101,7 @@ internal class ScheduleView(val data: GroupSchedule, private val settings: Share
             DayTimeline.build(lessons), focus, data.notices(), data.scheduleGroupName(),
             data.group(), data.availableSubgroups(), data.changeHistory(), data.status(), data.error(),
             data.id, favorites, primaryId,
-            if (notes.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else "")
+            if (notes.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else "",
+            dayNotes = notes.getOrDefault(emptyList()).filter { it.target.isDay })
     }
 }

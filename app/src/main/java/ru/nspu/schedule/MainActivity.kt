@@ -104,6 +104,10 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         screenActive = true
         scheduleRevision++
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { NoteReminders.reschedule(applicationContext) }
+                .onFailure { android.util.Log.e("NSPUWidget", "Cannot restore reminders", it) }
+        }
     }
 
     override fun onPause() {
@@ -228,18 +232,25 @@ class MainActivity : ComponentActivity() {
         var editingNote by rememberSaveable(stateSaver = NoteEditorRequestSaver) {
             mutableStateOf<NoteEditorRequest?>(null)
         }
+        var viewingNote by rememberSaveable(stateSaver = NoteEditorRequestSaver) {
+            mutableStateOf<NoteEditorRequest?>(null)
+        }
         var savingNote by remember { mutableStateOf(false) }
         var noteError by remember { mutableStateOf("") }
         var notesListError by remember { mutableStateOf("") }
+        // AGP 8.7/K2 false positive: issuetracker.google.com/issues/349411310.
+        // The producer explicitly assigns this.value below.
+        @Suppress("ProduceStateDoesNotAssignValue")
         val savedNotes by produceState<List<PersonalNote>?>(null, notesVisible, refreshTick) {
             if (notesVisible) {
                 val result = withContext(Dispatchers.IO) { runCatching { Notes.all(applicationContext) } }
                 notesListError = if (result.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else ""
-                value = result.getOrNull()
+                this.value = result.getOrNull()
             }
         }
 
-        fun writeNote(request: NoteEditorRequest, text: String = "", delete: Boolean = false) {
+        fun writeNote(request: NoteEditorRequest, text: String = "", delete: Boolean = false,
+            options: NoteOptions = request.note?.options ?: NoteOptions()) {
             if (savingNote) return
             savingNote = true
             noteError = ""
@@ -247,12 +258,13 @@ class MainActivity : ComponentActivity() {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
                         if (delete) request.note?.let { Notes.delete(applicationContext, it) }
-                        else Notes.save(applicationContext, request, text)
+                        else Notes.save(applicationContext, request, text, options)
                     }
                 }
                 savingNote = false
                 if (result.isSuccess) {
                     editingNote = null
+                    viewingNote = null
                     rerender++
                     lifecycleScope.launch(Dispatchers.IO) {
                         runCatching { ScheduleWidget.renderGroup(applicationContext, request.target.groupId) }
@@ -266,9 +278,11 @@ class MainActivity : ComponentActivity() {
         }
         var pendingFocusGroup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
         val selectedGroupId = remember(refreshTick) { Store.scheduleGroupId(this@MainActivity) }
+        // Same AGP/K2 lint issue; keep the suppression local to this state producer.
+        @Suppress("ProduceStateDoesNotAssignValue")
         val snapshot by key(selectedGroupId) {
             produceState<HomeScheduleSnapshot?>(null, refreshTick) {
-                value = withContext(Dispatchers.IO) { Store.homeSnapshot(applicationContext, selectedGroupId) }
+                this.value = withContext(Dispatchers.IO) { Store.homeSnapshot(applicationContext, selectedGroupId) }
             }
         }
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
@@ -310,7 +324,8 @@ class MainActivity : ComponentActivity() {
                 incomingNote = null
                 selectedTab = if (intent.getBooleanExtra("show_notices", false)) 1 else 0
                 favoritePicker = intent.getBooleanExtra("show_favorites", false)
-                editingNote = noteRequest
+                editingNote = noteRequest?.takeIf { it.note == null }
+                viewingNote = noteRequest?.takeIf { it.note != null }
                 noteError = ""
                 notesVisible = false
                 widgetHelp = false
@@ -337,6 +352,12 @@ class MainActivity : ComponentActivity() {
         val subgroup = home.subgroup
         val availableSubgroups = home.availableSubgroups
         val focusedLesson = home.focus
+        LaunchedEffect(screenActive, home.nextNoteBoundary) {
+            if (screenActive) home.nextNoteBoundary?.let {
+                delay((it - System.currentTimeMillis()).coerceAtLeast(1L))
+                scheduleRevision++
+            }
+        }
         LaunchedEffect(screenActive, focusedLesson, refreshTick) {
             if (screenActive) {
                 val at = LocalDateTime.now(ZONE)
@@ -404,24 +425,33 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup) {
             if (selectedTab == 0 && (autoScroll || pendingFocusGroup == home.groupId) && focusIndex >= 0) {
-                val prefix = 1 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
-                    1 + 1 + (if (notices.isNotEmpty()) 1 else 0)
+                val prefix = 3 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+                    (if (notices.isNotEmpty()) 1 else 0)
                 listState.scrollToItem(prefix + focusIndex)
                 pendingFocusGroup = null
             } else if (selectedTab != 0) listState.scrollToItem(0)
         }
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = { Text("Расписание НГПУ", style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                TopAppBar(
+                    title = {
+                        val favorite = home.favorites.firstOrNull { it.id == home.groupId }
+                        Column(Modifier.fillMaxWidth().clickable { favoritePicker = true }
+                            .semantics { contentDescription = "Избранные группы" }) {
+                            Text("Расписание НГПУ", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(favorite?.displayName ?: group.substringBefore(" "),
+                                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                Text("  ☆", fontSize = 22.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    },
                     actions = {
                         IconButton(onClick = { notesVisible = true }) {
                             Icon(painterResource(R.drawable.ic_note), contentDescription = "Мои заметки")
                         }
-                        IconButton(onClick = { favoritePicker = true }, modifier = Modifier.semantics {
-                            contentDescription = "Избранные группы"
-                        }) { Text("☆", fontSize = 25.sp) }
                         TextButton(onClick = { Sync.now(this@MainActivity); rerender++ }) {
                             Text("⟳", fontSize = 27.sp)
                         }
@@ -472,32 +502,6 @@ class MainActivity : ComponentActivity() {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (selectedTab == 0) item {
-                    Surface(shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(if (home.groupId == home.primaryGroupId) "ТВОЯ ГРУППА" else "ИЗБРАННАЯ ГРУППА", fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .75f))
-                            Row(verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(home.favorites.firstOrNull { it.id == home.groupId }?.displayName
-                                        ?: group.substringBefore(" "), fontSize = 24.sp,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                    Text(group, maxLines = 2,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontSize = 12.sp)
-                                }
-                                FilledTonalButton(onClick = { favoritePicker = true }) { Text("Избранное") }
-                            }
-                        }
-                    }
-                }
-
                 if (selectedTab == 0) {
                     if (availableSubgroups.isNotEmpty()) item {
                         Row(verticalAlignment = Alignment.CenterVertically,
@@ -508,29 +512,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     item {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items((-2..4).toList()) { daysFromSelected ->
-                                // Keep the quick day strip centered around the selected day, even after many swipes.
-                                val relative = date.plusDays(daysFromSelected.toLong())
-                                val daysFromToday = ChronoUnit.DAYS.between(LocalDate.now(ZONE), relative).toInt()
-                                val active = relative == date
-                                val caption = relative.format(DateTimeFormatter.ofPattern("EE", Locale.forLanguageTag("ru-RU")))
-                                val number = relative.dayOfMonth
-                                if (active) Button(
-                                    onClick = {
-                                        Store.jump(this@MainActivity, daysFromToday)
-                                        rerender++
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                                ) { Text("$caption $number") }
-                                else OutlinedButton(
-                                    onClick = {
-                                        Store.jump(this@MainActivity, daysFromToday)
-                                        rerender++
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                                ) { Text("$caption $number") }
-                            }
+                        DateStrip(date) { chosen ->
+                            Store.appView(this@MainActivity).selectDate(chosen)
+                            rerender++
                         }
                     }
                     item {
@@ -538,9 +522,28 @@ class MainActivity : ComponentActivity() {
                             Text(date.format(DateTimeFormatter.ofPattern("d MMMM, EEEE",
                                     Locale.forLanguageTag("ru-RU"))),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(lessons.size.toString() + " пар",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable {
+                                    pickNoteDate(this@MainActivity, date) { chosen ->
+                                        Store.appView(this@MainActivity).selectDate(chosen); rerender++
+                                    }
+                                }.semantics { contentDescription = "Выбрать дату в календаре" })
+                            TextButton(onClick = { Store.jump(this@MainActivity, 0); rerender++ }) { Text("Сегодня") }
+                        }
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Пары: ${lessons.size}", modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton(onClick = {
+                                    noteError = ""
+                                    editingNote = NoteEditorRequest(NoteTarget.day(home.groupId, date))
+                                }) { Text("+ Заметка на день") }
+                            }
+                            if (home.dayNotes.isNotEmpty()) DayNotesTiles(home.dayNotes) { note ->
+                                viewingNote = NoteEditorRequest(note.target, note)
+                            }
                         }
                     }
                     if (notices.isNotEmpty()) {
@@ -585,7 +588,8 @@ class MainActivity : ComponentActivity() {
                                 listScrolling, onOpenSchedule, onOpenNote = { card ->
                                     card.noteTarget?.let { target ->
                                         noteError = ""
-                                        editingNote = NoteEditorRequest(target, card.note)
+                                        val request = NoteEditorRequest(target, card.note)
+                                        if (card.note == null) editingNote = request else viewingNote = request
                                     }
                                 })
                             is DayRow.WindowRow -> GapCard(row)
@@ -831,14 +835,29 @@ class MainActivity : ComponentActivity() {
             home.favorites.associate { it.id to it.displayName }, notesListError,
             onDismiss = { notesVisible = false }, onOpen = { note ->
                 noteError = ""
-                editingNote = NoteEditorRequest(note.target, note)
+                viewingNote = NoteEditorRequest(note.target, note)
+            }, onAdd = {
+                notesVisible = false
+                noteError = ""
+                editingNote = NoteEditorRequest(NoteTarget.day(home.groupId, date))
             })
+        viewingNote?.note?.let { note ->
+            NoteViewer(note.copy(target = viewingNote?.target ?: note.target),
+                home.favorites.firstOrNull { it.id == note.target.groupId }?.displayName
+                    ?: "Группа №${note.target.groupId}",
+                onDismiss = { viewingNote = null }, onEdit = {
+                    noteError = ""
+                    editingNote = viewingNote
+                    viewingNote = null
+                })
+        }
         editingNote?.let { request ->
             NoteEditor(request,
                 home.favorites.firstOrNull { it.id == request.target.groupId }?.displayName
                     ?: "Группа №${request.target.groupId}",
-                savingNote, noteError, onDismiss = { editingNote = null },
-                onSave = { writeNote(request, it) }, onDelete = { writeNote(request, delete = true) })
+                savingNote, noteError, refreshTick, onDismiss = { editingNote = null },
+                onSave = { draft -> writeNote(request.copy(target = draft.target), draft.text, options = draft.options) },
+                onDelete = { writeNote(request, delete = true) })
         }
 
         if (favoritePicker) {

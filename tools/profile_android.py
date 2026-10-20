@@ -132,7 +132,8 @@ def swipe(width, height, up):
 
 def top(width, height):
     for _ in range(20):
-        if any(n.get('text') == 'ТВОЯ ГРУППА' for n in dump().iter('node')):
+        if any(n.get('text') == 'ТВОЯ ГРУППА' or n.get('content-desc') == 'Выбрать дату в календаре'
+               for n in dump().iter('node')):
             swipe(width, height, False)
             return
         swipe(width, height, False)
@@ -165,7 +166,7 @@ def run(apk, out, verify):
         launch = adb('shell', 'am', 'start', '-S', '-W', '-f', '0x10008000',
                      '-n', PKG + '/.MainActivity')
         (out / 'startup.txt').write_text(launch)
-        text('ТВОЯ ГРУППА')
+        wait_node(lambda n: n.get('text') in ('ТВОЯ ГРУППА', 'Расписание НГПУ'))
         size = re.search(r'(\d+)x(\d+)', adb('shell', 'wm', 'size'))
         width, height = map(int, size.groups())
         screenshot(out / 'home.png')
@@ -188,7 +189,7 @@ def run(apk, out, verify):
             text('Алгебра 1')
             screenshot(out / 'room.png')
             adb('shell', 'input', 'keyevent', '4')
-            text('ТВОЯ ГРУППА')
+            wait_node(lambda n: n.get('text') in ('ТВОЯ ГРУППА', 'Расписание НГПУ'))
         measure(out, 'home', width, height)
         top(width, height)
         tap(wait_node(lambda n: n.get('text', '').startswith(TEACHER)))
@@ -229,8 +230,8 @@ def main():
     try:
         # ABBA order exposes host/emulator drift instead of attributing one noisy
         # pair of measurements to an app change. Each trial starts from identical data.
-        trials = [('v2.9', args.baseline_apk, False), ('v2.10', args.current_apk, True),
-                  ('repeat-v2.10', args.current_apk, False), ('repeat-v2.9', args.baseline_apk, False)]
+        trials = [('v2.9', args.baseline_apk, False), ('v2.11', args.current_apk, True),
+                  ('repeat-v2.11', args.current_apk, False), ('repeat-v2.9', args.baseline_apk, False)]
         for label, apk, verify in trials:
             adb('uninstall', PKG, check=False)
             adb('install', '-r', args.fixture_apk)

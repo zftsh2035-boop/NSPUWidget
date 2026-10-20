@@ -62,7 +62,7 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 IconButton(onClick = { onOpenNote(card) }, modifier = Modifier.size(40.dp)) {
                     Icon(painterResource(R.drawable.ic_note),
-                        contentDescription = (if (card.note == null) "Добавить заметку: " else "Изменить заметку: ") +
+                        contentDescription = (if (card.note == null) "Добавить заметку: " else "Открыть заметку: ") +
                             card.subject + ", " + card.start,
                         tint = if (card.note != null) primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp))
@@ -94,13 +94,13 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
                     modifier = if (card.teacherPage != null) Modifier.clickable(
                         role = Role.Button, onClickLabel = "Расписание преподавателя"
                     ) { onOpenSchedule(card.teacherPage) } else Modifier)
-                card.note?.let { note ->
+                card.note?.takeIf { it.options.visibleOn(card.date) }?.let { note ->
                     Spacer(Modifier.height(6.dp))
                     Text("Заметка: " + note.preview,
                         style = MaterialTheme.typography.bodySmall, color = primary,
                         maxLines = 3, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth().clickable(
-                            role = Role.Button, onClickLabel = "Изменить или удалить заметку"
+                            role = Role.Button, onClickLabel = "Прочитать заметку целиком"
                         ) { onOpenNote(card) }.padding(vertical = 4.dp))
                 }
             }
