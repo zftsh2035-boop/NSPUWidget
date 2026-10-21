@@ -198,27 +198,39 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         items.forEach { a.put(JSONObject().put("id", it.id).put("text", it.text).put("published", it.published ?: "").put("isNew", it.isNew)) }
     }
 
-    /** No changes are committed if download/parsing/validation fails. */
-    @Synchronized
-    fun fetchAndSave(requestedAt: Long = 0): SyncOutcome {
-        if (requestedAt > 0 && prefs().getLong("fetched_at", 0) >= requestedAt)
-            return SyncOutcome(emptyList(), 0)
-        val url = source()
+    private fun download(extra: Boolean): Pair<PageSnapshot, List<ScheduleLink>> {
+        val url = "https://schedule.nspu.ru/" + (if (extra) "zgroup_shedule.php" else "group_shedule.php") +
+            "?id=${GroupIdentity.siteId(id)}&old=1"
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15000
             readTimeout = 18000
             setRequestProperty("User-Agent", "Mozilla/5.0 NSPUWidget/1.2")
             setRequestProperty("Accept", "text/html")
         }
-        val snapshot: PageSnapshot
-        val pageLinks: List<ScheduleLink>
         try {
             if (connection.responseCode != 200) error("HTTP ${connection.responseCode}")
             val doc = Jsoup.parse(connection.inputStream, null, url)
-            pageLinks = ScheduleLinks.fromPage(doc)
+            val pageLinks = ScheduleLinks.fromPage(doc)
             doc.select("script,style,nav,footer").remove()
-            snapshot = GroupTimetableParser.parse(doc, scheduleGroupCode(), extramural())
+            return GroupTimetableParser.parse(doc, scheduleGroupCode(), extra) to pageLinks
         } finally { connection.disconnect() }
+    }
+
+    /** No changes are committed if download/parsing/validation fails. */
+    @Synchronized
+    fun fetchAndSave(requestedAt: Long = 0): SyncOutcome {
+        if (requestedAt > 0 && prefs().getLong("fetched_at", 0) >= requestedAt)
+            return SyncOutcome(emptyList(), 0)
+        var resolvedExtra = extramural()
+        val received = try { download(resolvedExtra) } catch (original: IllegalArgumentException) {
+            // Older favorites did not remember zgroup_shedule. Repair the source
+            // only after the other official page validates against this group's code.
+            val alternative = runCatching { download(!resolvedExtra) }
+            if (alternative.isFailure) throw original
+            resolvedExtra = !resolvedExtra
+            alternative.getOrThrow()
+        }
+        val (snapshot, pageLinks) = received
 
         val start = snapshot.termStart ?: termStart()
         val changedTerm = snapshot.termStart != null && snapshot.termStart != termStart()
@@ -261,6 +273,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val ok = prefs().edit()
             .putString("lessons", lessonsJson(changes).toString())
             .putString("assessment_archive", lessonsJson(assessmentArchive).toString())
+            .putBoolean("extramural", resolvedExtra)
             .putString("notices", noticesJson(currentNotices).toString())
             .putStringSet("dismissed_notices", hiddenNow)
             .putString("known_notice_ids", combinedKnown.joinToString("|"))

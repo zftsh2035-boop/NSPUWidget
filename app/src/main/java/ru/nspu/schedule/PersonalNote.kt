@@ -81,12 +81,21 @@ internal object NoteMatching {
     fun resolve(targets: List<NoteTarget>, notes: List<PersonalNote>): Map<NoteTarget, PersonalNote> {
         val notesByIdentity = notes.filterNot { it.target.isDay }.groupBy { it.target.identity }
         val occurrences = targets.groupingBy { it.identity }.eachCount()
+        fun slotIgnoringKind(target: NoteTarget) = target.slot.filterIndexed { index, _ -> index != 3 }
+        val slotCounts = targets.groupingBy(::slotIgnoringKind).eachCount()
+        val oldSlots = notes.filterNot { it.target.isDay }.groupBy { slotIgnoringKind(it.target) }
         return targets.mapNotNull { target ->
             val candidates = notesByIdentity[target.identity].orEmpty()
             val exact = candidates.singleOrNull { it.target.slot == target.slot }
             val moved = if (occurrences[target.identity] == 1)
                 candidates.singleOrNull()?.takeIf { it.target.uniqueOnDay } else null
-            (exact ?: moved)?.let { target to it }
+            // A parser upgrade can replace the old generic type or distinguish
+            // a graded credit. Preserve a note only at one unambiguous exact slot.
+            val repairedType = if (slotCounts[slotIgnoringKind(target)] == 1)
+                oldSlots[slotIgnoringKind(target)]?.singleOrNull()?.takeIf {
+                    it.target.kind == "ЗАНЯТИЕ" || it.target.kind == "ЗАЧЁТ" && target.kind == "ЗАЧЁТ С ОЦЕНКОЙ"
+                } else null
+            (exact ?: moved ?: repairedType)?.let { target to it }
         }.toMap()
     }
 }

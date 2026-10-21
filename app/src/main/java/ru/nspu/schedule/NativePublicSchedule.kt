@@ -110,11 +110,11 @@ fun NativePublicSchedule(
     val date = remember { DateTimeFormatter.ofPattern("d MMMM", locale) }
     val fullDate = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", locale) }
     val dayNames = remember {
-        listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
+        listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
     }
     val timetable = if (displayedRequest == requestKey) data else cachedInMemory
     val daysData = remember(timetable) {
-        (0..5).map { day -> timetable?.byDay(day).orEmpty().map { it.present() } }
+        (0..6).map { day -> timetable?.byDay(day).orEmpty().map { it.present() } }
     }
     val datedData = remember(timetable) {
         listOf(timetable?.dated(PublicSection.DATED).orEmpty().map { it.present() },
@@ -205,7 +205,7 @@ fun NativePublicSchedule(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         if (selectedTab == 0) {
-                            for (i in 0..5) {
+                            for (i in 0..if (daysData[6].isNotEmpty()) 6 else 5) {
                                 val perDay = daysData[i]
                                 item(key = "d$i", contentType = "day-header") {
                                     Text(dayNames[i] + " · " +

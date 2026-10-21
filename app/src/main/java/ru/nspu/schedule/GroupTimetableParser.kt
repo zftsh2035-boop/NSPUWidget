@@ -6,20 +6,20 @@ import java.time.LocalDate
 /** Keep the site's cells, week columns and dated session tables separate. */
 internal object GroupTimetableParser {
     private val days = listOf("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
-    private val oneTime = Regex("""^\s*(\d{1,2}[:.]\d{2})\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
+    private val oneTime = Regex("""^\s*(\d{1,2}[:.]\d{2}(?:\s*[-–—]\s*\d{1,2}[:.]\d{2})?)\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
     private val academicHeading = Regex("""(?iu)\d+\s+семестр|теоретическое\s+обучение|экзаменационная\s+сессия|каникулы|(?:адаптационная|педагогическая)\s+практика\s+с""")
 
     fun parse(doc: Document, selectedGroup: String, extramural: Boolean = false): PageSnapshot {
         val flat = doc.body().text()
         val selectedCode = Regex("""\d\.\d{3}\.\d{1,2}\.\d{2}""").find(selectedGroup)?.value ?: selectedGroup
-        require(doc.select("h2").any { it.text().startsWith("Группа ") && it.text().contains(selectedCode) }) {
+        require(doc.select("h2").any { it.text().contains(selectedCode) }) {
             "Это не страница выбранной группы: $selectedGroup"
         }
         val tables = doc.select("table.rasp_table")
         require(tables.isNotEmpty()) { "На странице не найдены таблицы расписания" }
         val lessons = mutableListOf<Lesson>()
         val notices = mutableListOf<Notice>()
-        val info = tables.firstOrNull { it.select("h2").any { h -> h.text().startsWith("Группа ") } }
+        val info = tables.firstOrNull { it.select("h2").any { h -> h.text().contains(selectedCode) } }
         if (info != null) {
             val banner = PublicTimetableParser.directRows(info).flatMap { PublicTimetableParser.directCells(it) }
                 .filter { it.select("h2").isEmpty() }.joinToString(" ") { it.text() }
@@ -48,7 +48,8 @@ internal object GroupTimetableParser {
                         var raw = piece.trim().trim(',', ' ', '\u00a0')
                         if (raw.length < 4 || raw == "—") continue
                         val clock = oneTime.find(raw)
-                        val time = clock?.groupValues?.get(1)?.replace('.', ':') ?: slot
+                        val time = SiteParser.statedTime(raw) ?: clock?.groupValues?.get(1)?.replace('.', ':')
+                            ?.replace(Regex("\\s*[-–—]\\s*"), "-") ?: slot
                         if (clock != null) raw = raw.substring(clock.range.last + 1).trim()
                         // Free text following a semicolon belongs to the preceding lesson.
                         if (!raw.contains(',') && clock == null && lessons.lastOrNull()?.let {

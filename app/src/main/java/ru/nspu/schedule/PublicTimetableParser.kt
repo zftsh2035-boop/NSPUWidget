@@ -52,7 +52,7 @@ object PublicTimetableParser {
     )
     private val dated = Regex("""(\d{1,2})\s+([а-яё]+)\s+(20\d{2})""", RegexOption.IGNORE_CASE)
     private val numericDate = Regex("""^\s*(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)""")
-    private val leadingClock = Regex("""^\s*(\d{1,2}[:.]\d{2})\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
+    private val leadingClock = Regex("""^\s*(\d{1,2}[:.]\d{2}(?:\s*[-–—]\s*\d{1,2}[:.]\d{2})?)\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
 
     fun parse(doc: Document, page: OfficialSchedulePage, offset: Int,
               today: LocalDate = LocalDate.now(ZONE)): PublicTimetable {
@@ -128,7 +128,7 @@ object PublicTimetableParser {
     }
 
     internal fun time(raw: String): String? {
-        val m = period.find(raw)
+        val m = period.matchEntire(raw.trim())
         if (m != null) return m.groupValues[1].replace('.', ':') + "-" +
             m.groupValues[2].replace('.', ':')
         return raw.trim().replace('.', ':').takeIf { examTime.matches(it) }
@@ -254,7 +254,8 @@ object PublicTimetableParser {
             .trimEnd(' ', ',') else text.substringBefore(",").trim()
         val name = subject.ifBlank { text.substringBefore(",").trim() }
         val kind = SiteParser.lessonKind(Lesson(day, slot, text), date, termStart)
-        return PublicClass(clock?.groupValues?.get(1)?.replace('.', ':') ?: slot, name, text, kind,
+        return PublicClass(SiteParser.statedTime(text) ?: clock?.groupValues?.get(1)?.replace('.', ':')
+            ?.replace(Regex("\\s*[-–—]\\s*"), "-") ?: slot, name, text, kind,
             fragment.refs, day, if (section == PublicSection.WEEKLY) null else date, section)
     }
 

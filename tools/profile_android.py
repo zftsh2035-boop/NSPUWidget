@@ -77,7 +77,8 @@ def fixture_files(directory):
     links = [dict(kind='TEACHER', label=TEACHER, url=SOURCE + 'teacher_shedule.php?id=452'),
              dict(kind='ROOM', label='411', url=SOURCE + 'room_shedule.php?id=31')]
     prefs = {
-        'schedule': {'group_id': 3328, 'group_name': '3.008.2.26 ИСиТвО', 'subgroup': 'Все', 'parser_version': 1,
+        'schedule': {'group_id': 3328, 'group_name': '3.008.2.26 ИСиТвО', 'subgroup': 'Все', 'parser_version': 2,
+                     'fetched_at': int(time.time() * 1000),
                      'selected_date': str(selected), 'term_start': str(monday - timedelta(weeks=6)),
                      'lessons': json.dumps(lessons, ensure_ascii=False), 'notices': '[]',
                      'change_history': '[]', 'updated': 'Тестовая локальная копия',
@@ -105,7 +106,7 @@ def fixture_files(directory):
                          links=[dict(label='3.008.2.26', url=SOURCE + 'group_shedule.php?id=3328', type='group'),
                                 dict(label='411', url=SOURCE + 'room_shedule.php?id=31', type='room')])
                     for day in range(6) for slot, clock in enumerate(TIMES)]
-        data = dict(parserVersion=1, title=TEACHER, week=7, weekStart=str(monday), roomInfo='Тестовая аудитория',
+        data = dict(parserVersion=2, title=TEACHER, week=7, weekStart=str(monday), roomInfo='Тестовая аудитория',
                     hasPast=True, sessions=sessions)
         digest = hashlib.sha256((SOURCE + page + '&nextweek=0').encode()).hexdigest()[:24]
         path = directory / f'nspu-public-{digest}.json'

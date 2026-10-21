@@ -20,12 +20,15 @@ class ImportantInfoTest {
         assertTrue(ImportantInfo.notices(listOf(credit), LocalDate.of(2026, 11, 29), start).isEmpty())
     }
     @Test fun bothParenthesizedAbbreviationsAndFreeTextUseTheSameKinds() {
-        for (raw in listOf("(зач.)", "(ЗАЧ)", "(ЗАЧЁТ)", "28.11.2026 - зачет с оценкой"))
+        for (raw in listOf("(зач.)", "(ЗАЧ)", "(ЗАЧЁТ)"))
             assertEquals(raw, "ЗАЧЁТ", SiteParser.specialKind(raw))
+        for (raw in listOf("(з.о.)", "(З. О.)", "28.11.2026 - зачет с оценкой"))
+            assertEquals(raw, "ЗАЧЁТ С ОЦЕНКОЙ", SiteParser.specialKind(raw))
         for (raw in listOf("(экз.)", "(ЭКЗ)", "Экзамен"))
             assertEquals(raw, "ЭКЗАМЕН", SiteParser.specialKind(raw))
         assertEquals("КОНСУЛЬТАЦИЯ", SiteParser.specialKind("Предмет (конс.)"))
         assertEquals("КУРСОВАЯ", SiteParser.specialKind("Предмет (курс.р.)"))
+        assertEquals("КУРСОВАЯ", SiteParser.specialKind("Спецкурс по курсовой работе, (к.р.), Курсовую работу сдать на кафедру"))
         assertNull(SiteParser.specialKind("Информационная безопасность и защита информации (л.)"))
         assertNull(SiteParser.specialKind("Экзема и её лечение (п.з.)"))
     }

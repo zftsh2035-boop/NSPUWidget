@@ -79,4 +79,13 @@ class PersonalNoteTest {
         val languageNote = note.copy(target = english)
         assertTrue(match(english.copy(subgroup = "8"), notes = listOf(languageNote)).isEmpty())
     }
+    @Test fun repairedGenericAndGradedTypesKeepOnlyAnUnambiguousExactNote() {
+        val generic = note.copy(target=target.copy(kind="ЗАНЯТИЕ"))
+        assertEquals(generic,match(target,notes=listOf(generic))[target])
+        assertTrue(match(target,target.copy(kind="ЛЕКЦИЯ"),notes=listOf(generic)).isEmpty())
+        assertTrue(match(target.copy(time="12:10-13:40"),notes=listOf(generic)).isEmpty())
+        val graded = target.copy(kind="ЗАЧЁТ С ОЦЕНКОЙ")
+        val oldCredit = note.copy(target=target.copy(kind="ЗАЧЁТ"))
+        assertEquals(oldCredit,match(graded,notes=listOf(oldCredit))[graded])
+    }
 }

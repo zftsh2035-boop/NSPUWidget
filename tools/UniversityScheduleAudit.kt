@@ -14,6 +14,7 @@ private val auditMonths = listOf("января","февраля","марта","�
 private val dateWords = Regex("""^(\d{1,2})\s+([а-яё]+)\s+(20\d{2})""",RegexOption.IGNORE_CASE)
 private val dateNumbers = Regex("""^(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)""")
 private val sourceClock = Regex("""^\d{1,2}[:.]\d{2}(?:\s*[-–—]\s*\d{1,2}[:.]\d{2})?$""")
+private val sourceOverride = Regex("""^(\d{1,2}[:.]\d{2}(?:\s*[-–—]\s*\d{1,2}[:.]\d{2})?)\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
 private fun sourceDate(value: String): LocalDate? {
     val text = value.trim()
     val words = dateWords.find(text)
@@ -80,7 +81,13 @@ fun main(args: Array<String>) {
                 if (foundDate != null) { date=foundDate;time=null;continue }
                 if (sourceClock.matches(text)) { time=normalizedClock(text);continue }
                 if (date != null && time != null && text.length>3 && text!="—") {
-                    expected.getOrPut(datedKey(date,time)) { mutableListOf() }.add(text)
+                    for (part in text.split(';').map { it.trim() }.filter { it.length>3 }) {
+                        val explicit = sourceOverride.find(part)
+                        val stated = Regex("""(?iu)\bначало\s*[-–—:]?\s*(\d{1,2}[:.]\d{2})""").find(part)?.groupValues?.get(1)
+                        val slot = stated ?: explicit?.groupValues?.get(1) ?: time
+                        val body = if (explicit != null) part.substring(explicit.range.last+1) else part
+                        expected.getOrPut(datedKey(date,slot)) { mutableListOf() }.add(body)
+                    }
                 }
             }
         }

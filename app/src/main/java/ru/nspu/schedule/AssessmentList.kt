@@ -59,7 +59,8 @@ internal object AssessmentList {
 
     fun entries(lessons: List<Lesson>, now: LocalDateTime, termStart: LocalDate,
         subgroup: String = "Все", known: Map<String, Notice> = emptyMap()): List<AssessmentEntry> = lessons
-        .filter { SiteParser.subgroupFits(it.raw, subgroup) }.mapNotNull { lesson ->
+        .filter { SiteParser.subgroupFits(it.raw, subgroup) && SiteParser.fixedDate(it)?.isBefore(termStart) != true }
+        .mapNotNull { lesson ->
             val kind = SiteParser.specialKind(lesson.raw) ?: return@mapNotNull null
             val source = ImportantInfo.notices(listOf(lesson), now.toLocalDate(), termStart, includePast = true)
                 .singleOrNull() ?: return@mapNotNull null

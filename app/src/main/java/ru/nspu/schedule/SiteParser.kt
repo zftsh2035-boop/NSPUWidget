@@ -18,17 +18,19 @@ object SiteParser {
     private val datePattern = Regex("(?<!\\d)([0-3]?\\d)\\.([01]?\\d)\\.(20\\d{2})(?:\\s*г\\.)?")
     private val weeksPattern = Regex("\\(([^)]*нед\\.[^)]*)\\)", RegexOption.IGNORE_CASE)
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
-    private val weekNumbers = Regex("(\\d+)(?:\\s*-\\s*(\\d+))?")
+    private val weekNumbers = Regex("(\\d+)(?:\\s*[-–—]\\s*(\\d+))?")
     private val languagePattern = Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
     private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен|экз\.?)\b""")
     private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т|зач\.?)\b""")
+    private val gradedCreditPattern = Regex("""(?iu)(?:\(\s*з\s*\.\s*о\s*\.\s*\)|зач[её]т\s+с\s+оценкой|дифференцированный\s+зач[её]т)""")
     private val consultationPattern = Regex("""(?iu)(?:\(\s*конс\.\s*\)|(?<![а-яё])консультация(?![а-яё]))""")
-    private val courseworkPattern = Regex("""(?iu)(?:\(\s*курс\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
-    private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
+    private val courseworkPattern = Regex("""(?iu)(?:\(\s*(?:курс|к)\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
+    private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([0-9,\s\-–—]+)\s*нед\.""", RegexOption.IGNORE_CASE)
     private val plainTypePattern = Regex("""(?iu)\(\s*(л\s*\.\s*з\s*\.|п\s*\.\s*з\s*\.|л\s*\.)\s*\)""")
-    private val rangePart = Regex("""\d+\s*[-–]\s*\d+|\d+""")
+    private val rangePart = Regex("""\d+\s*[-–—]\s*\d+|\d+""")
     private val numberPattern = Regex("""\d+""")
-    private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
+    private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:аудитория|ауд\.?|а\.|кабинет|каб\.?)\s*([^,;()]+)""")
+    private val statedStart = Regex("""(?iu)\bначало\s*[-–—:]?\s*(\d{1,2}[:.]\d{2})""")
 
     fun parse(text: String, selectedGroup: String = "3.008.2.26"): PageSnapshot {
         val flat = text.replace('\u00a0', ' ').replace(Regex("\\s+"), " ").trim()
@@ -95,12 +97,11 @@ object SiteParser {
 
     /** The university publishes the dates for each semester in the page header. */
     fun termStart(text: String): LocalDate? {
-        val m = Regex("""(?iu)[12]\s+семестр.{0,120}?теоретическое\s+обучение\s+с\s+(\d{1,2}\.\d{1,2}\.20\d{2})""")
-            .find(text) ?: return null
-        return runCatching {
-            val date = m.groupValues[1].split('.').map { it.toInt() }
-            LocalDate.of(date[2], date[1], date[0])
-        }.getOrNull()
+        val heading = Regex("""(?iu)теоретическое\s+обучение""").find(text) ?: return null
+        val after = text.substring(heading.range.last + 1).take(400)
+        val end = Regex("""(?iu)экзаменационная\s+сессия|каникулы|нерабочие|числитель""")
+            .find(after)?.range?.first ?: after.length
+        return ImportantInfo.dates(after.take(end)).minOrNull()
     }
 
     fun academicWeek(date: LocalDate, start: LocalDate = LocalDate.of(2026, 9, 1)): Int {
@@ -210,11 +211,15 @@ object SiteParser {
 
     data class LessonInfo(val subject: String, val teacher: String, val room: String, val kind: String)
 
+    /** A stated start time overrides the grid; no end time is guessed. */
+    internal fun statedTime(raw: String): String? = statedStart.find(raw)?.groupValues?.get(1)?.replace('.', ':')
+
     fun details(l: Lesson, date: LocalDate = LocalDate.now(), termStart: LocalDate = LocalDate.of(2026, 9, 1)): LessonInfo {
         val subject = l.raw.substringBefore(',').trim()
-        val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore(" (").trim()
+        val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore("(").trim()
         val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
-        val room = roomPattern.find(l.raw)?.groupValues?.get(1)?.trim()?.take(30) ?: "—"
+        val room = roomPattern.find(l.raw)?.groupValues?.get(1)?.trim()
+            ?.replace(Regex("""(?iu)\s+(?:начало\b|\d{1,2}[:.]\d{2}).*$"""), "")?.take(30) ?: "—"
         return LessonInfo(subject, teacher, room, lessonKind(l, date, termStart))
     }
 
@@ -222,7 +227,7 @@ object SiteParser {
         "ЛЕКЦИЯ" -> 0xFF6DBEFF.toInt()
         "ПРАКТИКА" -> 0xFF4BE1CD.toInt()
         "ЛАБОРАТОРНАЯ" -> 0xFFC3A9FF.toInt()
-        "ЗАЧЁТ" -> 0xFFFFCD80.toInt()
+        "ЗАЧЁТ", "ЗАЧЁТ С ОЦЕНКОЙ" -> 0xFFFFCD80.toInt()
         "ЭКЗАМЕН" -> 0xFFFF92A6.toInt()
         "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ" -> 0xFFD4A6FF.toInt()
         else -> 0xFFA9BEDB.toInt()
@@ -233,6 +238,7 @@ object SiteParser {
         "ПРАКТИКА" -> "п.з."
         "ЛАБОРАТОРНАЯ" -> "л.з."
         "ЗАЧЁТ" -> "зач."
+        "ЗАЧЁТ С ОЦЕНКОЙ" -> "з.о."
         "ЭКЗАМЕН" -> "экз."
         "КОНСУЛЬТАЦИЯ" -> "конс."
         "КУРСОВАЯ" -> "курс.р."
@@ -241,12 +247,13 @@ object SiteParser {
 
     fun specialKind(raw: String): String? = when {
         examPattern.containsMatchIn(raw) -> "ЭКЗАМЕН"
+        gradedCreditPattern.containsMatchIn(raw) -> "ЗАЧЁТ С ОЦЕНКОЙ"
         creditPattern.containsMatchIn(raw) -> "ЗАЧЁТ"
         consultationPattern.containsMatchIn(raw) -> "КОНСУЛЬТАЦИЯ"
         courseworkPattern.containsMatchIn(raw) -> "КУРСОВАЯ"
         else -> null
     }
-    fun importantKind(kind: String) = kind in setOf("ЭКЗАМЕН", "ЗАЧЁТ", "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ")
+    fun importantKind(kind: String) = kind in setOf("ЭКЗАМЕН", "ЗАЧЁТ", "ЗАЧЁТ С ОЦЕНКОЙ", "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ")
     fun displayKind(kind: String) = if (importantKind(kind)) kind else shortKind(kind)
 
     private fun hash(value: String): String {
