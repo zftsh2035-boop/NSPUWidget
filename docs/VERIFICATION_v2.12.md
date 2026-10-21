@@ -1,24 +1,25 @@
 # Verification for 2.12
 
-- XML parsing, Python helper compilation and `git diff --check` passed locally.
-- The first signed CI build on `e8130bb706f15a9b80424bedf73fc4cb8d28509b` passed. It contains widget diagnostics, update notes and the new adaptive/themed icon.
-- Follow-up changes add general important-event extraction, full assessment labels/contrast, dated-lesson priority and notification deduplication. Their regression and emulator checks are pending.
-- Added pure tests use the actual mathematics credit example for 28 November 2026, mixed-case/parenthesized abbreviations, bold extramural table cells, changed dates/rooms, ambiguous dates and previously unknown annotations.
-- The UI scenario covers cached GitHub update text, hidden build metadata, the future-credit card and dated lesson, diagnostics for two real widgets, offline installed-version notes and the system-rendered app icon.
-- The Blackview BV4900 failure has not been diagnosed on the physical phone. The supplied screenshot matches the static full-widget template (missing date/group, default star colour and default empty text). This is evidence that populated content was not applied, not proof of a missing permission. The new local report records callback/render phases, cache state, worker state and Android restrictions without collecting note or lesson text.
-- No claim is made that arbitrary natural-language notices can always be interpreted. Exact dates and explicit event words are recognised; ambiguous/new wording remains visible as source text. Background checks use WorkManager and may be delayed by Android.
+The application sources were verified at `41d261ddfb5263babe7958f7c658afa12260cc44`. The final release preparation changes documentation only.
 
-Follow-up regression run on `e7007ee785d40d5bd3752090a01f63d7e969e99d`:
+| Check | Result | Evidence |
+|---|---|---|
+| Full Android regression tests, live public HTML, R8 debug/release builds, ZIP and signing integrity | PASS | [Build 39533447036](https://github.com/zftsh2035-boop/NSPUWidget/actions/runs/39533447036) |
+| Android 15 / API 35, five complete feature scenarios | PASS | [Run 39533447021](https://github.com/zftsh2035-boop/NSPUWidget/actions/runs/39533447021) |
+| Android 10 / API 29, five feature scenarios, native navigation and repeated scroll measurements | PASS | [Run 39533446996](https://github.com/zftsh2035-boop/NSPUWidget/actions/runs/39533446996) |
+| Focused local parser, important-event and release-note JUnit tests | 19 passed | Includes eight new group-HTML tests and both official week-annotation styles |
+| Local signing-validation unit tests | 4 passed | No private key material is printed |
+| Python compilation, XML checks and whitespace checks | PASS | Local checks; XML assets also compiled by Android CI |
 
-- Compiled successfully; 69 tests executed, with one skipped live check and one failure in the standalone extramural table fixture. All other new event/annotation/abbreviation tests passed.
-- The failing fixture exposed a real parser assumption: the first table was always sent to the weekly-grid parser. Standalone extramural pages begin with calendar-date rows. Table selection now considers explicit calendar cells and the page type; malformed-HTML fallback preserves the same distinction. Standalone extramural views open their dated section by default.
-- The bold/uppercase assertion is retained and now additionally requires exact dates and the dated section. Rerun pending.
+The feature scenarios cover widget introduction and native pin confirmation; note CRUD, long text, cold/warm widget links, process restart and draft restoration; legacy note migration, day notes, two saved reminder times and an OS alarm; independent favorite groups/dates in the app and two actual widgets; GitHub update text without the build appendix, the future-credit card and exact date, widget diagnostics/copy, offline installed-version notes and the OS-rendered icon. Screenshots and reports are attached to each run.
 
+The dev release APK measured 1,538,912 bytes. Its certificate SHA-256 is `03d2e0e96610346495a76abd60dc9e3dc4f968f457898426e3326183dd9cd85b`, matching v2.11 and the permanent repository secret. The stable workflow independently verifies signing and APK integrity before publishing. Its final download size/checksum are recorded in the GitHub release assets.
 
-Extended public-page audit and follow-up:
+See [the 26-page public schedule audit](PUBLIC_AUDIT_v2.12.md) for concrete missing session events, merged week columns, short-year dates, embedded start times, the sample URLs and limits. Older parsed caches are refreshed; the format migration does not claim that all old lessons were just changed by the university.
 
-- Signed build and all schedule unit/live tests passed on `178026d39c26f1f92265580bfb9191aebec9cde4` (run 39530322224).
-- Full Android 10/API 29 feature and performance workflow passed on the same revision (run 39530322217).
-- Android 15 passed introduction, planner, favorites, future-credit display and diagnostic report. Two automation problems remained: flooding a multiline editor with deletion key events, and tapping Close while Android’s clipboard overlay covered that button. The saved screenshot confirms the latter opened Android’s clipboard editor; the test now waits for that temporary overlay. Short observed input batches / a supported Ctrl+A chord replace the deletion flood.
-- A user-requested wider audit downloaded 26 official pages from five departments. It exposed week-column merging, first-header-table classification, short-year dates and omitted separate session tables. The actual parsers were corrected and 19 focused local JUnit tests pass. See `PUBLIC_AUDIT_v2.12.md` for the sample, concrete examples and limits.
-- A new complete Android build and emulator run is required after the parser corrections; no physical Blackview result is claimed.
+## Limits
+
+- The Blackview BV4900 has not been tested physically and its root cause is unconfirmed. The supplied screenshot matches the static full-widget template: no date/group and the default empty text. This supports an unapplied populated view, not a conclusion about permissions. The local report records callbacks/render submissions, cache, workers and Android restrictions; `render_ok` does not prove that a launcher drew the pixels. No note or lesson text is included.
+- Background refresh uses WorkManager every three hours and Android can delay it. Discovery/change notifications require the OS notification permission. A notification at a chosen future time remains a personal-note reminder.
+- Exact dates and explicit assessment words are recognised; ambiguous and unfamiliar wording remains source text. The audit is a sample, not a guarantee about every university page or future HTML format. Two sampled pages contain no timetable tables.
+- The performance workflow retains historical folder labels `v2.11` / `repeat-v2.11`; in this run they contain the current commit APK, compared with the actual v2.9 baseline. Emulator frame counts are observations, not physical-device, battery or universal speed claims.
