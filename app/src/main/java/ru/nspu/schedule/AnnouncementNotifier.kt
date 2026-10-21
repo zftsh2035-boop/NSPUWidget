@@ -22,7 +22,8 @@ object AnnouncementNotifier {
         manager.createNotificationChannel(NotificationChannel("nspu-changes",
             "Изменения расписания", NotificationManager.IMPORTANCE_DEFAULT))
         val pending = PendingIntent.getActivity(c, 15,
-            Intent(c, MainActivity::class.java).putExtra("show_changes", true),
+            Intent(c, MainActivity::class.java).putExtra("show_changes", true)
+                .putExtra("open_group_id", Favorites.primaryId(c)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val body = changes.take(3).joinToString("\n") { it.message }
         manager.notify(3329, NotificationCompat.Builder(c, "nspu-changes")
@@ -53,7 +54,8 @@ object AnnouncementNotifier {
             })
         }
         val pendingIntent = PendingIntent.getActivity(c, if (assessments) 16 else 12,
-            Intent(c, MainActivity::class.java).putExtra(if (assessments) "show_assessments" else "show_notices", true),
+            Intent(c, MainActivity::class.java).putExtra(if (assessments) "show_assessments" else "show_notices", true)
+                .putExtra("open_group_id", Favorites.primaryId(c)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val heading = if (assessments) "Зачёты и экзамены · обновлений: ${fresh.size}"
             else if (fresh.size == 1) "Новое объявление НГПУ" else "Новых объявлений: ${fresh.size}"
