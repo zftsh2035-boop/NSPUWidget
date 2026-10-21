@@ -26,7 +26,7 @@ internal fun Lesson.present(date: LocalDate, termStart: LocalDate,
     val info = SiteParser.details(this, date, termStart)
     val teacher = links.teacher(raw)
     return LessonPresentation(this, date, info.subject, teacher?.label ?: info.teacher,
-        info.room, info.kind, SiteParser.shortKind(info.kind),
+        info.room, info.kind, SiteParser.displayKind(info.kind),
         time.substringBefore('-'), time.substringAfter('-', ""),
         teacher?.let { OfficialSchedulePage.fromUrl(it.url, it.label) },
         links.room(info.room)?.let { OfficialSchedulePage.fromUrl(it.url, "Ауд. " + info.room) })

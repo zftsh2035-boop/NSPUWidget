@@ -91,7 +91,7 @@ class LessonListService : RemoteViewsService() {
                 setTextViewText(R.id.lessonTimeEnd, lesson.time.substringAfter('-', ""))
                 setTextViewText(R.id.lessonSubject, detail.subject)
                 setTextViewText(R.id.lessonTeacher, detail.teacher)
-                setTextViewText(R.id.lessonKind, SiteParser.shortKind(detail.kind))
+                setTextViewText(R.id.lessonKind, SiteParser.displayKind(detail.kind))
                 setTextColor(R.id.lessonKind, color)
                 setInt(R.id.lessonStripe, "setBackgroundColor", color)
                 setTextViewText(R.id.lessonRoom, if (detail.room == "—") "—" else "ауд.\n" + detail.room)

@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -33,8 +34,11 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
     animateHighlight: Boolean, active: Boolean, neon: Boolean, scrolling: State<Boolean>,
     onOpenSchedule: (OfficialSchedulePage) -> Unit,
     onOpenNote: (LessonPresentation) -> Unit) {
-    val accent = remember(card.kind, neon) {
+    val important = SiteParser.importantKind(card.kind)
+    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
+    val accent = remember(card.kind, neon, dark) {
         Color(if (neon) WidgetTheme.lessonAccent(card.kind, WidgetMode.NEON)
+            else if (important) WidgetTheme.lessonAccent(card.kind, if (dark) WidgetMode.DARK else WidgetMode.LIGHT)
             else SiteParser.lessonColor(card.kind))
     }
     val pulse = rememberLessonPulse(highlighted && active && animateHighlight, scrolling)
@@ -43,8 +47,9 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
 
     Surface(shape = RoundedCornerShape(21.dp),
         tonalElevation = if (highlighted) 0.dp else 2.dp,
-        color = MaterialTheme.colorScheme.surface,
-        border = if (highlighted) BorderStroke(2.dp, primary)
+        color = if (important) lerp(MaterialTheme.colorScheme.surface, accent, .10f) else MaterialTheme.colorScheme.surface,
+        border = if (important) BorderStroke(2.dp, accent)
+            else if (highlighted) BorderStroke(2.dp, primary)
             else BorderStroke(1.dp, accent.copy(alpha = .34f)),
         modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().drawBehind {
@@ -70,8 +75,9 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
             }
             Column(Modifier.weight(1f).padding(vertical = 12.dp, horizontal = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(color = accent.copy(alpha = .18f), shape = RoundedCornerShape(8.dp)) {
-                        Text(card.kindLabel, fontSize = 12.sp, color = accent,
+                    Surface(color = if (important) accent else accent.copy(alpha = .18f), shape = RoundedCornerShape(8.dp)) {
+                        Text(card.kindLabel, fontSize = 12.sp, color = if (important)
+                            (if (accent.luminance() > .4f) Color(0xFF111111) else Color.White) else accent,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp))
                     }

@@ -26,7 +26,13 @@ class Sync(ctx: Context, params: WorkerParameters): CoroutineWorker(ctx, params)
                 ScheduleWidget.renderGroup(applicationContext, id)
                 if (id == Favorites.primaryId(applicationContext)) {
                     AnnouncementNotifier.show(applicationContext, outcome.newNotices)
-                    AnnouncementNotifier.showChanges(applicationContext, outcome.changes)
+                    val eventIds = outcome.newNotices.filter { ImportantInfo.isEvent(it) }.map { it.id }.toSet()
+                    val separateChanges = outcome.changes.filter { change ->
+                        val lesson = change.lesson
+                        lesson == null || ImportantInfo.notices(listOf(lesson), java.time.LocalDate.now(ZONE), data.termStart())
+                            .none { it.id in eventIds }
+                    }
+                    AnnouncementNotifier.showChanges(applicationContext, separateChanges)
                 }
             } catch (e: CancellationException) {
                 throw e

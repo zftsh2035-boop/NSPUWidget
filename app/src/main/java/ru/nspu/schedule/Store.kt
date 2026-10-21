@@ -85,7 +85,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     }
     fun notices(): List<Notice> {
         val raw = prefs().getString("notices", "[]") ?: "[]"
-        return synchronized(cacheLock) {
+        val saved = synchronized(cacheLock) {
             if (raw != noticeRaw) {
                 val a = JSONArray(raw)
                 noticeSnapshot = (0 until a.length()).map { i ->
@@ -96,6 +96,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
             }
             noticeSnapshot
         }
+        return (saved + ImportantInfo.notices(cached(), LocalDate.now(ZONE), termStart()))
+            .distinctBy { it.id }.filterNot { SiteParser.noticeIsOutdated(it, LocalDate.now(ZONE)) }
     }
     /** Hiding affects only this phone's home-screen widget, never the official site or app. */
     fun widgetNotices(): List<Notice> {
@@ -141,16 +143,21 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     fun error() = prefs().getString("error", "") ?: ""
     fun forDate(date: LocalDate): List<Lesson> {
         val day = date.dayOfWeek.value - 1
-        if (day !in 0..5) return emptyList()
         val start = termStart()
         val languageGroup = group()
-        return cached().filter { it.day == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup) }
+        return cached().filter {
+            val explicitDay = ImportantInfo.dates(it.raw).singleOrNull()?.dayOfWeek?.value?.minus(1)
+            (explicitDay ?: it.day) == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup)
+        }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
     }
     fun markAllRead() {
         val lessonArray = lessonsJson(cached().map { it.copy(changed = false) })
-        val noticeArray = noticesJson(notices().map { it.copy(isNew = false) })
-        prefs().edit().putString("lessons", lessonArray.toString()).putString("notices", noticeArray.toString()).apply()
+        val current = notices()
+        val noticeArray = noticesJson(current.map { it.copy(isNew = false) })
+        val known = prefs().getString("known_notice_ids", "").orEmpty().split('|').filter(String::isNotBlank)
+        prefs().edit().putString("lessons", lessonArray.toString()).putString("notices", noticeArray.toString())
+            .putString("known_notice_ids", (known + current.map { it.id }).distinct().takeLast(150).joinToString("|")).apply()
         Store.changed(context, id)
     }
     private fun lessonsJson(items: List<Lesson>): JSONArray = JSONArray().also { a ->
@@ -198,7 +205,9 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val previousNotices = notices().associateBy { it.id }
         val previousNoticeIds = prefs().getString("known_notice_ids", "")!!.split('|').filter { it.isNotBlank() }.toSet()
         val hasNoticeBaseline = prefs().contains("notices")
-        val currentNotices = snapshot.notices.map { notice ->
+        val incomingNotices = (snapshot.notices + ImportantInfo.notices(snapshot.lessons, LocalDate.now(ZONE), start))
+            .distinctBy { it.id }
+        val currentNotices = incomingNotices.map { notice ->
             notice.copy(isNew = (previousNotices[notice.id]?.isNew == true) ||
                 (hasNoticeBaseline && notice.id !in previousNoticeIds))
         }

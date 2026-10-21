@@ -19,8 +19,10 @@ object SiteParser {
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
     private val weekNumbers = Regex("(\\d+)(?:\\s*-\\s*(\\d+))?")
     private val languagePattern = Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
-    private val examPattern = Regex("""(?i)(?<![а-яё])экз\.?(?![а-яё])""")
-    private val creditPattern = Regex("""(?i)(?<![а-яё])зач\.?(?![а-яё])""")
+    private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен|экз\.?)\b""")
+    private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т|зач\.?)\b""")
+    private val consultationPattern = Regex("""(?iu)(?:\(\s*конс\.\s*\)|(?<![а-яё])консультация(?![а-яё]))""")
+    private val courseworkPattern = Regex("""(?iu)(?:\(\s*курс\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
     private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
     private val rangePart = Regex("""\d+\s*[-–]\s*\d+|\d+""")
     private val numberPattern = Regex("""\d+""")
@@ -101,6 +103,8 @@ object SiteParser {
     }
 
     fun applicable(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): Boolean {
+        val explicit = ImportantInfo.dates(lesson.raw)
+        if (explicit.size == 1) return date == explicit.single()
         val week = academicWeek(date, termStart)
         if (week !in 1..24) return false
         val weeks = weeksPattern.find(lesson.raw)?.groupValues?.get(1)
@@ -152,7 +156,7 @@ object SiteParser {
 
     /** Arbitrary notices have no reliable expiry rule. The site controls visibility. */
     @Suppress("UNUSED_PARAMETER")
-    fun noticeIsOutdated(notice: Notice, today: LocalDate): Boolean = false
+    fun noticeIsOutdated(notice: Notice, today: LocalDate): Boolean = ImportantInfo.expired(notice, today)
     fun noticeLabel(notice: Notice): String = if (notice.isNew) "● НОВОЕ" else "ОБЪЯВЛЕНИЕ НГПУ"
 
     fun formattedNoticeDate(@Suppress("UNUSED_PARAMETER") notice: Notice): String = "На сайте НГПУ"
@@ -161,8 +165,7 @@ object SiteParser {
     /** Resolves multiple event types in one official slot for the selected calendar week. */
     fun lessonKind(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): String {
         val raw = lesson.raw
-        if (raw.contains("экзамен", ignoreCase = true) || examPattern.containsMatchIn(raw)) return "ЭКЗАМЕН"
-        if (raw.contains("зачёт", ignoreCase = true) || raw.contains("зачет", ignoreCase = true) || creditPattern.containsMatchIn(raw)) return "ЗАЧЁТ"
+        specialKind(raw)?.let { return it }
         val week = academicWeek(date, termStart)
         val typeParts = typePartsPattern.findAll(raw).toList()
         val matched = typeParts.firstOrNull { match ->
@@ -193,7 +196,9 @@ object SiteParser {
         "ЛЕКЦИЯ" -> 0xFF6DBEFF.toInt()
         "ПРАКТИКА" -> 0xFF4BE1CD.toInt()
         "ЛАБОРАТОРНАЯ" -> 0xFFC3A9FF.toInt()
-        "ЗАЧЁТ", "ЭКЗАМЕН" -> 0xFFFFCD80.toInt()
+        "ЗАЧЁТ" -> 0xFFFFCD80.toInt()
+        "ЭКЗАМЕН" -> 0xFFFF92A6.toInt()
+        "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ" -> 0xFFD4A6FF.toInt()
         else -> 0xFFA9BEDB.toInt()
     }
 
@@ -203,8 +208,20 @@ object SiteParser {
         "ЛАБОРАТОРНАЯ" -> "л.з."
         "ЗАЧЁТ" -> "зач."
         "ЭКЗАМЕН" -> "экз."
+        "КОНСУЛЬТАЦИЯ" -> "конс."
+        "КУРСОВАЯ" -> "курс.р."
         else -> "—"
     }
+
+    fun specialKind(raw: String): String? = when {
+        examPattern.containsMatchIn(raw) -> "ЭКЗАМЕН"
+        creditPattern.containsMatchIn(raw) -> "ЗАЧЁТ"
+        consultationPattern.containsMatchIn(raw) -> "КОНСУЛЬТАЦИЯ"
+        courseworkPattern.containsMatchIn(raw) -> "КУРСОВАЯ"
+        else -> null
+    }
+    fun importantKind(kind: String) = kind in setOf("ЭКЗАМЕН", "ЗАЧЁТ", "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ")
+    fun displayKind(kind: String) = if (importantKind(kind)) kind else shortKind(kind)
 
     private fun hash(value: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(value.lowercase().toByteArray(Charsets.UTF_8))

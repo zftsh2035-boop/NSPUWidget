@@ -2,7 +2,7 @@ package ru.nspu.schedule
 
 import java.time.LocalDate
 
-data class ScheduleChange(val message: String, val lessonKey: String)
+data class ScheduleChange(val message: String, val lessonKey: String, val lesson: Lesson? = null)
 
 /** Semantic changes in lessons (not differences in HTML whitespace or annotation text). */
 object ChangeLog {
@@ -37,11 +37,14 @@ object ChangeLog {
                         if (o.kind != n.kind && o.kind != "ЗАНЯТИЕ" && n.kind != "ЗАНЯТИЕ") {
                             parts += "Тип ${SiteParser.shortKind(o.kind)} → ${SiteParser.shortKind(n.kind)}"
                         }
+                        if (parts.isEmpty() && normalized(before.raw) != normalized(after.raw)) {
+                            parts += "Изменение на сайте: " + after.raw
+                        }
                         if (parts.isEmpty()) null else "$label: " + parts.joinToString("; ")
                     }
                     else -> null
                 }
-                if (desc != null) changes += ScheduleChange(desc.take(450), key + ":" + i)
+                if (desc != null) changes += ScheduleChange(desc.take(450), key + ":" + i, after ?: before)
             }
         }
         return changes.distinctBy { it.message }.take(40)

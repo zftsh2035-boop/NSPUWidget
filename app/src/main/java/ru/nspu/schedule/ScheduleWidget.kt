@@ -240,7 +240,7 @@ class ScheduleWidget : AppWidgetProvider() {
                             " · " + focus.lesson.time.substringBefore('-')
                     v.setTextViewText(R.id.compactTime,
                         time + if (tiny && d.room != "—") " · ауд. " + d.room else "")
-                    v.setTextViewText(R.id.compactKind, SiteParser.shortKind(d.kind))
+                    v.setTextViewText(R.id.compactKind, SiteParser.displayKind(d.kind))
                     v.setTextViewText(R.id.compactRoom,
                         if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)
                     v.setTextColor(R.id.compactKind, WidgetTheme.lessonAccent(d.kind, widgetMode))
@@ -304,7 +304,8 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setTextViewText(R.id.subtitle,
                 (favorite?.displayName ?: data.scheduleGroupCode()) + " · неделя " + data.week(date) + " · " + data.group())
             val notices = data.widgetNotices()
-            val newest = notices.firstOrNull { it.isNew } ?: notices.firstOrNull()
+            val newest = notices.firstOrNull { it.isNew } ?: notices.firstOrNull { ImportantInfo.isEvent(it) }
+                ?: notices.firstOrNull()
             if (newest != null && !medium) {
                 v.setViewVisibility(R.id.noticeBox, View.VISIBLE)
                 v.setTextViewText(R.id.noticeLabel, if (newest.isNew) "● НОВОЕ ОБЪЯВЛЕНИЕ" else "ОБЪЯВЛЕНИЕ НГПУ")

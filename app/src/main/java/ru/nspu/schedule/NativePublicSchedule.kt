@@ -11,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -294,15 +296,22 @@ internal fun PublicClass.present(): PublicLessonPresentation {
     val details = listOf(groups, rooms, teachers).filter { it.isNotBlank() }.joinToString(" · ")
     val weeks = weekNotePattern.findAll(description).map { it.value }.distinct().joinToString(" · ")
     val fallback = description.substringAfter(",", "").trim().substringBefore("(").trim()
-    return PublicLessonPresentation(subject, time, details.ifBlank { fallback }, weeks, kind, date, SiteParser.shortKind(kind))
+    val actualKind = SiteParser.specialKind(description) ?: kind
+    return PublicLessonPresentation(subject, time, details.ifBlank { fallback }, weeks, actualKind, date, SiteParser.displayKind(actualKind))
 }
 
 /** Compact, non-clickable card with all week ranges immediately visible. */
 @Composable
 private fun SimpleTimetableLesson(lesson: PublicLessonPresentation) {
+    val important = SiteParser.importantKind(lesson.kind)
+    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
+    val accent = if (important) Color(WidgetTheme.lessonAccent(lesson.kind,
+        if (dark) WidgetMode.DARK else WidgetMode.LIGHT)) else MaterialTheme.colorScheme.primary
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (important) lerp(MaterialTheme.colorScheme.surface, accent, .10f)
+            else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = if (important) BorderStroke(2.dp, accent) else null,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -328,13 +337,13 @@ private fun SimpleTimetableLesson(lesson: PublicLessonPresentation) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
-                val accent = MaterialTheme.colorScheme.primary
                 Surface(shape = RoundedCornerShape(7.dp),
-                    color = accent.copy(alpha = .10f)) {
+                    color = if (important) accent else accent.copy(alpha = .10f)) {
                     Text(lesson.kindLabel,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = accent, fontWeight = FontWeight.Bold)
+                        color = if (important) (if (accent.luminance() > .4f) Color(0xFF111111) else Color.White)
+                            else accent, fontWeight = FontWeight.ExtraBold)
                 }
             }
         }

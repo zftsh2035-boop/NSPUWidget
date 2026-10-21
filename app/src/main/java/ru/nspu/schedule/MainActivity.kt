@@ -528,6 +528,16 @@ class MainActivity : ComponentActivity() {
                             rerender++
                         }
                     }
+                    val importantNotices = notices.filter { ImportantInfo.isEvent(it) }
+                    if (importantNotices.isNotEmpty()) item {
+                        ImportantNoticeStrip(importantNotices) { notice ->
+                            val eventDate = ImportantInfo.date(notice)
+                            if (eventDate != null) {
+                                Store.appView(this@MainActivity).selectDate(eventDate)
+                                rerender++
+                            } else selectedTab = 1
+                        }
+                    }
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(date.format(DateTimeFormatter.ofPattern("d MMMM, EEEE",

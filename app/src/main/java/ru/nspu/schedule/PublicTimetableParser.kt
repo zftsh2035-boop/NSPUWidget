@@ -241,8 +241,7 @@ object PublicTimetableParser {
     }
 
     private fun classify(text: String, section: PublicSection, date: LocalDate): String {
-        if (Regex("""(?iu)(?:экзамен|экз\.)""").containsMatchIn(text)) return "ЭКЗАМЕН"
-        if (Regex("""(?iu)(?:зачёт|зачет|зач\.)""").containsMatchIn(text)) return "ЗАЧЁТ"
+        SiteParser.specialKind(text)?.let { return it }
         val marked = kindRanges.findAll(text).firstOrNull { match ->
             val week = SiteParser.academicWeek(date)
             ranges.findAll(match.groupValues[2]).any { r ->
