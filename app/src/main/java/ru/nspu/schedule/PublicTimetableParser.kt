@@ -53,7 +53,7 @@ object PublicTimetableParser {
     private val dated = Regex("""(\d{1,2})\s+([а-яё]+)\s+(20\d{2})""", RegexOption.IGNORE_CASE)
     private val annotations = Regex("""\(([^)]*нед\.[^)]*)\)""", RegexOption.IGNORE_CASE)
     private val ranges = Regex("""(\d+)(?:\s*[-–]\s*(\d+))?""")
-    private val kindRanges = Regex("""(л\.з\.|п\.з\.|л\.)\s*:\s*([\d,\s–-]+)\s*нед\.""", RegexOption.IGNORE_CASE)
+    private val kindRanges = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([\d,\s–-]+)\s*нед\.""", RegexOption.IGNORE_CASE)
     private val allTypes = Regex("""(?iu)\((экз\.?|зач\.?|л\.з\.|п\.з\.|л\.)\)""")
     private val leadingClock = Regex("""^\s*(\d{1,2}[:.]\d{2})\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
 

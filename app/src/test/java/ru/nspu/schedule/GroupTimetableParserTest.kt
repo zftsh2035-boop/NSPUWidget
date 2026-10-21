@@ -53,6 +53,9 @@ class GroupTimetableParserTest {
         assertTrue(SiteParser.applicable(lesson,LocalDate.of(2026,9,14),start))
         val practice = lesson.copy(raw="Педагогическая практика, Преподаватель, (практика: 4-5 нед.)")
         assertTrue(SiteParser.applicable(practice,LocalDate.of(2026,9,21),start))
+        val outside = lesson.copy(raw="Предмет, Преподаватель, (л.): 2,6-9 нед.")
+        assertFalse(SiteParser.applicable(outside,LocalDate.of(2026,8,31),start))
+        assertTrue(SiteParser.applicable(outside,LocalDate.of(2026,10,19),start))
     }
 
     @Test fun sessionAfterLastModifiedTextIsIncludedWithItsDateAndStartOnly() {

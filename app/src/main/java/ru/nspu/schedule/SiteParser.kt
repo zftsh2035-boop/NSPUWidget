@@ -24,7 +24,7 @@ object SiteParser {
     private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т|зач\.?)\b""")
     private val consultationPattern = Regex("""(?iu)(?:\(\s*конс\.\s*\)|(?<![а-яё])консультация(?![а-яё]))""")
     private val courseworkPattern = Regex("""(?iu)(?:\(\s*курс\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
-    private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
+    private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
     private val rangePart = Regex("""\d+\s*[-–]\s*\d+|\d+""")
     private val numberPattern = Regex("""\d+""")
     private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
@@ -121,7 +121,7 @@ object SiteParser {
 
     fun fixedDate(lesson: Lesson): LocalDate? {
         lesson.date?.let { return it }
-        if (weeksPattern.containsMatchIn(lesson.raw) ||
+        if (weeksPattern.containsMatchIn(lesson.raw) || typePartsPattern.containsMatchIn(lesson.raw) ||
             Regex("(?iu)\\b(?:с|по|до)\\s+\\d{1,2}\\.\\d{1,2}\\.").containsMatchIn(lesson.raw)) return null
         return ImportantInfo.dates(lesson.raw).singleOrNull()
     }
