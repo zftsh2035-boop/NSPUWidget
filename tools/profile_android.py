@@ -32,7 +32,21 @@ def dump():
             result = adb('shell', 'uiautomator', 'dump', '--compressed', '/sdcard/nspu-window.xml')
             if 'dumped to' not in result:
                 raise RuntimeError('UIAutomator did not finish a fresh hierarchy dump: ' + result)
-            return ET.fromstring(adb('exec-out', 'cat', '/sdcard/nspu-window.xml'))
+            root = ET.fromstring(adb('exec-out', 'cat', '/sdcard/nspu-window.xml'))
+            # Fresh Google API images can show a Pixel Launcher ANR while their
+            # first-boot Google packages initialize. This is an external system
+            # overlay, not the tested app. Never dismiss an NSPU app ANR/crash.
+            launcher_anr = any(n.get('resource-id') == 'android:id/alertTitle' and
+                               n.get('text') == "Pixel Launcher isn't responding"
+                               for n in root.iter('node'))
+            if launcher_anr:
+                close = next((n for n in root.iter('node') if n.get('resource-id') == 'android:id/aerr_close'), None)
+                if close is None or attempt == 2:
+                    raise RuntimeError('Emulator Pixel Launcher ANR did not clear')
+                tap(close)
+                time.sleep(.5)
+                continue
+            return root
         except (subprocess.CalledProcessError, ET.ParseError, RuntimeError):
             if attempt == 2:
                 raise

@@ -39,6 +39,10 @@ def main():
         lessons.append(dict(day=future.weekday(), time='10:10-11:40',
             raw='Контрольная математика, Преподаватель, а. 404, ' + future.strftime('%d.%m.%Y') + ' - зачёт', changed=False))
         set_value(schedule, 'lessons', json.dumps(lessons, ensure_ascii=False))
+        past = datetime.now(ZoneInfo('Asia/Novosibirsk')).date() - timedelta(days=1)
+        archive = [dict(day=past.weekday(), time='10:10-11:40',
+            raw='Прошедший зачёт, Преподаватель (зач.), а. 417', date=str(past))]
+        set_value(schedule, 'assessment_archive', json.dumps(archive, ensure_ascii=False))
         put_pref('schedule', schedule)
         settings = ET.fromstring(adb('exec-out', 'run-as', PKG, 'cat', 'shared_prefs/app-settings.xml'))
         set_value(settings, 'update_prompts', 'true', 'boolean')
@@ -69,6 +73,9 @@ def main():
         assert not any('should-not-appear' in n.get('text', '') for n in dump().iter('node'))
         save_ui(args.output, 'update-changes')
         tap(text('Позже'))
+        tap(text('Объявления'))
+        text('Объявлений на сайте сейчас нет.')
+        assert not any(n.get('text') == 'ЗАЧЁТ' for n in dump().iter('node')), 'Assessment leaked into announcements'
         tap(text('Зачёты'))
         text('Зачёты и экзамены')
         event = text('ЗАЧЁТ')
@@ -87,6 +94,19 @@ def main():
         else:
             raise AssertionError('Credit lesson was not reachable or its full label was missing')
         save_ui(args.output, 'credit-lesson-emphasis')
+        # This event is absent from downloaded lessons and exists only in the
+        # semester archive. A cold start must still show it as elapsed.
+        adb('shell', 'am', 'force-stop', PKG)
+        adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity', '--ez', 'show_assessments', 'true')
+        text('Зачёты и экзамены')
+        for _ in range(6):
+            if any(n.get('text') == 'Прошёл' for n in dump().iter('node')):
+                break
+            adb('shell', 'input', 'swipe', 160, 500, 160, 260, 350)
+        else:
+            raise AssertionError('Archived elapsed credit disappeared after restart')
+        text('Прошедший зачёт')
+        save_ui(args.output, 'past-credit-after-restart')
         start_host()
         full_is(PRIMARY)
         compact_is(PRIMARY)

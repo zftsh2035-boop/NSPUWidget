@@ -84,7 +84,8 @@ fun main(args: Array<String>) {
                     var preceding: String? = null
                     for (part in text.split(';').map { it.trim() }.filter { it.length>3 }) {
                         val explicit = sourceOverride.find(part)
-                        val stated = Regex("""(?iu)\bначало\s*[-–—:]?\s*(\d{1,2}[:.]\d{2})""").find(part)?.groupValues?.get(1)
+                        // Link boundaries can join "а. 103</a>Начало" in text().
+                        val stated = Regex("""(?iu)начало\s*[-–—:]?\s*(\d{1,2}[:.]\d{2})""").find(part)?.groupValues?.get(1)
                         val slot = stated ?: explicit?.groupValues?.get(1) ?: time
                         val body = if (explicit != null) part.substring(explicit.range.last+1) else part
                         val key = if (explicit == null && stated == null && !part.contains(',') && preceding != null)
