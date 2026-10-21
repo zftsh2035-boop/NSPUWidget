@@ -20,40 +20,58 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class ScheduleWidget : AppWidgetProvider() {
-    private fun background(block: () -> Unit) {
+    private fun background(context: Context, recover: Boolean = true, block: () -> Unit) {
         val pending = goAsync()
         scope.launch {
             try { block() }
-            catch (e: Exception) { android.util.Log.e("NSPUWidget", "Widget action failed", e) }
+            catch (e: Exception) {
+                android.util.Log.e("NSPUWidget", "Widget action failed", e)
+                WidgetDiagnostics.record(context, "callback_failed", error = e)
+                if (recover) runCatching {
+                    val manager = AppWidgetManager.getInstance(context)
+                    manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java))
+                        .forEach { recovery(context, manager, it) }
+                }
+            }
             finally { pending.finish() }
         }
     }
-    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = background {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = background(context) {
+        ids.forEach { WidgetDiagnostics.record(context, "on_update", it) }
         Store.initialize(context)
+        // Display the cache before scheduling background work. A scheduler failure
+        // must not strand every widget at its initial XML layout.
+        ids.forEach { render(context, manager, it) }
         Sync.schedule(context)
         ids.forEach { id ->
             val data = Store.data(context, WidgetSettings.groupId(context, id))
-            render(context, manager, id)
             if (data.cached().isEmpty()) Sync.now(context, data.id)
         }
         FocusClock.schedule(context)
     }
-    override fun onDeleted(context: Context, ids: IntArray) = background {
+    override fun onDeleted(context: Context, ids: IntArray) = background(context, recover = false) {
         ids.forEach { WidgetSettings.delete(context, it) }
         FocusClock.schedule(context)
     }
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager,
-        appWidgetId: Int, newOptions: Bundle) = background { render(context, manager, appWidgetId) }
+        appWidgetId: Int, newOptions: Bundle) = background(context) {
+            WidgetDiagnostics.record(context, "options_changed", appWidgetId)
+            render(context, manager, appWidgetId)
+        }
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_CONFIGURATION_CHANGED) {
-            background { renderAll(context) }
+            background(context) { renderAll(context) }
             return
         }
         if (intent.action == "ru.nspu.schedule.NAV") {
             val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
             if (id < 0) return
-            background {
+            background(context) {
+                val command = intent.getStringExtra("cmd")?.takeIf {
+                    it in setOf("prev", "next", "today", "refresh", "dismiss", "groups", "close", "select")
+                } ?: "unknown"
+                WidgetDiagnostics.record(context, "action_$command", id)
                 val manager = AppWidgetManager.getInstance(context)
                 if (id !in manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java)))
                     return@background
@@ -81,6 +99,21 @@ class ScheduleWidget : AppWidgetProvider() {
     }
     companion object {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private fun recovery(context: Context, manager: AppWidgetManager, id: Int) {
+            val views = RemoteViews(context.packageName, R.layout.widget_compact_tiny).apply {
+                setTextViewText(R.id.compactHeader, "Расписание НГПУ")
+                setTextViewText(R.id.compactSubject, "Не удалось обновить виджет")
+                setTextViewText(R.id.compactTime, "Нажми, чтобы открыть приложение")
+                setTextViewText(R.id.compactTeacher, "Настройки → Диагностика виджетов")
+                val intent = Intent(context, MainActivity::class.java)
+                    .setData(Uri.parse("nspuwidget://recovery/$id"))
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                setOnClickPendingIntent(R.id.compactRoot, PendingIntent.getActivity(context, id, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                setViewVisibility(R.id.groups, View.GONE)
+            }
+            manager.updateAppWidget(id, views)
+        }
         fun renderAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, ScheduleWidget::class.java))
@@ -136,6 +169,17 @@ class ScheduleWidget : AppWidgetProvider() {
             return v
         }
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
+            WidgetDiagnostics.record(context, "render_start", widgetId)
+            try {
+                renderContent(context, manager, widgetId)
+                WidgetDiagnostics.record(context, "render_ok", widgetId)
+            } catch (e: Exception) {
+                WidgetDiagnostics.record(context, "render_failed", widgetId, e)
+                android.util.Log.e("NSPUWidget", "Cannot render widget $widgetId", e)
+                runCatching { recovery(context, manager, widgetId) }
+            }
+        }
+        private fun renderContent(context: Context, manager: AppWidgetManager, widgetId: Int) {
             val options = manager.getAppWidgetOptions(widgetId)
             val views = if (Build.VERSION.SDK_INT >= 31) {
                 @Suppress("DEPRECATION")
@@ -286,8 +330,12 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setRemoteAdapter(R.id.lessonList, service)
             v.setEmptyView(R.id.lessonList, R.id.emptyState)
             v.setTextViewText(R.id.emptyState,
-                if (data.cached().isEmpty()) "Расписание загружается…" else "Пар на этот день нет")
-            val status = if (data.error().isNotBlank()) "Офлайн · сохранённая версия"
+                if (data.cached().isEmpty()) {
+                    if (data.error().isNotBlank()) "Не удалось загрузить расписание. Открой приложение"
+                    else "Расписание загружается…"
+                } else "Пар на этот день нет")
+            val status = if (data.error().isNotBlank() && data.cached().isEmpty()) "Ошибка загрузки · нажми ↻"
+                else if (data.error().isNotBlank()) "Офлайн · сохранённая версия"
                 else "Обновлено " + data.status()
             v.setTextViewText(R.id.status, status)
             v.setOnClickPendingIntent(R.id.prev, action(context, widgetId, "prev"))

@@ -12,7 +12,8 @@ data class AppUpdate(
     val releaseUrl: String,
     val apkUrl: String,
     val channel: String = AppSettings.STABLE,
-    val key: String = version
+    val key: String = version,
+    val notes: String = ""
 )
 
 /** Stable = verified GitHub Releases, dev = successful Actions artifacts from dev branch. */
@@ -86,7 +87,7 @@ object UpdateChecker {
             ?.takeIf { it.startsWith("$RELEASES/download/") } ?: ""
         if (!newer(tag, installedVersion(c))) return null
         return AppUpdate(tag.removePrefix("v"), url, apk, AppSettings.STABLE,
-            "stable:" + tag.removePrefix("v"))
+            "stable:" + tag.removePrefix("v"), ReleaseNotes.display(json.optString("body")))
     }
 
     private fun dev(c: Context): AppUpdate? {
@@ -105,7 +106,8 @@ object UpdateChecker {
         if (!page.startsWith("https://github.com/zftsh2035-boop/NSPUWidget/actions/runs/")) return null
         val version = "dev-" + sha.take(8)
         // A public Actions artifact may require signing in to GitHub; never label it a direct APK.
-        return AppUpdate(version, page, "", AppSettings.DEV, "dev:" + sha)
+        return AppUpdate(version, page, "", AppSettings.DEV, "dev:" + sha,
+            ReleaseNotes.display(run.optJSONObject("head_commit")?.optString("message").orEmpty()))
     }
 
     private fun stored(c: Context, channel: String): AppUpdate? {
@@ -114,7 +116,7 @@ object UpdateChecker {
         val version = p.getString("version_$channel", null) ?: return null
         val release = p.getString("url_$channel", null) ?: return null
         val apk = p.getString("apk_$channel", "") ?: ""
-        val result = AppUpdate(version, release, apk, channel, key)
+        val result = AppUpdate(version, release, apk, channel, key, p.getString("notes_$channel", "").orEmpty())
         return if (channel == AppSettings.STABLE) result.takeIf { newer(it.version, installedVersion(c)) }
             else result.takeIf { it.key.removePrefix("dev:") != BuildConfig.GIT_SHA }
     }
@@ -137,6 +139,7 @@ object UpdateChecker {
                     .putString("version_$channel", update?.version)
                     .putString("url_$channel", update?.releaseUrl)
                     .putString("apk_$channel", update?.apkUrl)
+                    .putString("notes_$channel", update?.notes)
                     .apply()
                 handler.post {
                     // Don't show a stale result if the user switched channels during the request.
@@ -148,5 +151,20 @@ object UpdateChecker {
                 if (AppSettings.channel(app) == channel) callback(stored(app, channel))
             }
         }.start()
+    }
+
+    /** Explicitly opened history for the installed version; cached for offline reading. Run on IO. */
+    fun installedNotes(c: Context): String {
+        val version = installedVersion(c)
+        if (!Regex("\\d+(?:\\.\\d+){1,3}").matches(version)) return ""
+        val p = prefs(c)
+        val key = "installed_notes_$version"
+        val cached = p.getString(key, "").orEmpty()
+        if (cached.isNotBlank() && System.currentTimeMillis() - p.getLong("${key}_at", 0L) < INTERVAL_MS)
+            return cached
+        return runCatching { ReleaseNotes.display(request("releases/tags/v$version").optString("body")) }
+            .onSuccess { notes -> if (notes.isNotBlank()) p.edit().putString(key, notes)
+                .putLong("${key}_at", System.currentTimeMillis()).apply() }
+            .getOrDefault(cached)
     }
 }

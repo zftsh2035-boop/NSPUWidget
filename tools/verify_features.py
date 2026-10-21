@@ -16,6 +16,7 @@ checks = [
     ('notes', 'verify_notes.py', [args.fixture_apk, args.current_apk, args.host_apk]),
     ('planner', 'verify_planner.py', [args.fixture_apk, args.current_apk, args.host_apk]),
     ('favorites', 'verify_favorites.py', [args.fixture_apk, args.current_apk, args.host_apk]),
+    ('support', 'verify_support.py', [args.fixture_apk, args.current_apk, args.host_apk]),
 ]
 failures = []
 for name, script, inputs in checks:

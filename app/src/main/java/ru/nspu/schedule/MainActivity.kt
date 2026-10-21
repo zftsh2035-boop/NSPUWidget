@@ -295,12 +295,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
-        var showUpdateDialog by remember { mutableStateOf(false) }
+        var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
         var channel by remember { mutableStateOf(AppSettings.channel(this@MainActivity)) }
         var animateHighlight by remember { mutableStateOf(AppSettings.animateHighlight(this@MainActivity)) }
         var autoScroll by remember { mutableStateOf(AppSettings.autoScroll(this@MainActivity)) }
         var updatePrompts by remember { mutableStateOf(AppSettings.updatePrompts(this@MainActivity)) }
         var showAbout by remember { mutableStateOf(false) }
+        var showInstalledChanges by remember { mutableStateOf(false) }
+        var showWidgetDiagnostics by remember { mutableStateOf(false) }
         var widgetTheme by remember { mutableStateOf(AppSettings.widgetTheme(this@MainActivity)) }
         var checkCounter by remember { mutableIntStateOf(0) }
         var manualCheck by remember { mutableStateOf(false) }
@@ -668,6 +670,7 @@ class MainActivity : ComponentActivity() {
                             Text("Пары, аудитория и заметки — без открытия приложения.",
                                 style = MaterialTheme.typography.bodySmall)
                             FilledTonalButton(onClick = { widgetHelp = true }) { Text("Добавить виджет") }
+                            TextButton(onClick = { showWidgetDiagnostics = true }) { Text("Диагностика виджетов") }
                         }
                     }
                     item {
@@ -794,6 +797,9 @@ class MainActivity : ComponentActivity() {
                         Text("NSPUWidget · версия " + UpdateChecker.installedVersion(this@MainActivity))
                         Text("Неофициальное приложение расписания НГПУ. Данные берутся с сайта университета.")
                         Text("Исходный код, история изменений и релизы доступны на GitHub.")
+                        TextButton(onClick = { showAbout = false; showInstalledChanges = true }) {
+                            Text("Что нового")
+                        }
                     }
                 },
                 confirmButton = {
@@ -810,30 +816,15 @@ class MainActivity : ComponentActivity() {
         }
         if (showUpdateDialog && availableUpdate != null) {
             val update = availableUpdate!!
-            AlertDialog(
-                onDismissRequest = { showUpdateDialog = false },
-                title = { Text("Доступно обновление") },
-                text = {
-                    Text(if (update.channel == AppSettings.DEV)
-                        "Новая тестовая сборка " + update.version +
-                            " доступна в GitHub Actions. На странице сборки открой Artifacts; может потребоваться вход в GitHub. Эту сборку повторно предлагать не будем."
-                        else "Версия " + update.version +
-                            " доступна в GitHub Releases. Установленная: " +
-                            UpdateChecker.installedVersion(this@MainActivity) +
-                            ". Если не хочешь устанавливать сейчас, повторно предлагать эту версию не будем.")
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showUpdateDialog = false
-                        startActivity(Intent(Intent.ACTION_VIEW,
-                            Uri.parse(update.apkUrl.ifBlank { update.releaseUrl })))
-                    }) { Text(if (update.channel == AppSettings.DEV) "Открыть сборку" else "Скачать") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showUpdateDialog = false }) { Text("Не сейчас") }
-                }
-            )
+            UpdateDialog(update, onDismiss = { showUpdateDialog = false }, onDownload = {
+                showUpdateDialog = false
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.apkUrl.ifBlank { update.releaseUrl })))
+            }, onRelease = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl))) })
         }
+
+        if (showInstalledChanges) InstalledChangesDialog(onDismiss = { showInstalledChanges = false },
+            onRelease = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.RELEASES))) })
+        if (showWidgetDiagnostics) WidgetDiagnosticsDialog(onDismiss = { showWidgetDiagnostics = false })
 
         if (widgetHelp) WidgetSetupDialog(onDismiss = {
             AppSettings.setWidgetIntroSeen(this@MainActivity)

@@ -22,15 +22,15 @@
     </LinearLayout>
     <TextView android:layout_marginEnd="30dp" android:id="@+id/compactSubject" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="2dp"
-        android:text="Расписание и заметки" android:textSize="13sp" android:textStyle="bold" android:textColor="#FFFFFF"
+        android:text="Расписание НГПУ" android:textSize="13sp" android:textStyle="bold" android:textColor="#FFFFFF"
         android:singleLine="true" android:ellipsize="end"/>
     <TextView android:id="@+id/compactTime" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="2dp"
-        android:text="Ближайшая пара" android:textSize="11sp" android:textStyle="bold" android:textColor="#A9F2D9"
+        android:text="Подготовка виджета…" android:textSize="11sp" android:textStyle="bold" android:textColor="#A9F2D9"
         android:singleLine="true" android:ellipsize="end"/>
     <TextView android:id="@+id/compactTeacher" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="1dp"
-        android:text="Группа · преподаватель · аудитория" android:textSize="10sp" android:textColor="#D5E1F3"
+        android:text="Если данных нет — открой приложение" android:textSize="10sp" android:textColor="#D5E1F3"
         android:singleLine="true" android:ellipsize="end"/>
     <TextView android:visibility="gone" android:id="@+id/compactRoom" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="2dp"
@@ -38,6 +38,6 @@
         android:singleLine="true" android:ellipsize="end"/>
     </LinearLayout>
     <TextView android:id="@+id/groups" android:layout_width="36dp" android:layout_height="40dp"
-        android:layout_gravity="top|end" android:gravity="center" android:text="☆" android:textSize="23sp"
+        android:layout_gravity="top|end" android:gravity="center" android:text="☆" android:textSize="23sp" android:textColor="#8FC8FF"
         android:contentDescription="Избранные группы" />
 </FrameLayout>

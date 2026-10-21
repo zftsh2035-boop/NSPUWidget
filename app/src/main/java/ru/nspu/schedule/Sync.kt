@@ -20,7 +20,9 @@ class Sync(ctx: Context, params: WorkerParameters): CoroutineWorker(ctx, params)
             if (Favorites.find(applicationContext, id) == null) continue
             val data = Store.data(applicationContext, id)
             try {
+                WidgetDiagnostics.record(applicationContext, "sync_start_group_$id")
                 val outcome = data.fetchAndSave(requestedAt)
+                WidgetDiagnostics.record(applicationContext, "sync_ok_group_$id")
                 ScheduleWidget.renderGroup(applicationContext, id)
                 if (id == Favorites.primaryId(applicationContext)) {
                     AnnouncementNotifier.show(applicationContext, outcome.newNotices)
@@ -30,6 +32,7 @@ class Sync(ctx: Context, params: WorkerParameters): CoroutineWorker(ctx, params)
                 throw e
             } catch (e: Exception) {
                 failed = true
+                WidgetDiagnostics.record(applicationContext, "sync_failed_group_$id", error = e)
                 data.saveError(e)
                 ScheduleWidget.renderGroup(applicationContext, id)
             }
@@ -39,15 +42,19 @@ class Sync(ctx: Context, params: WorkerParameters): CoroutineWorker(ctx, params)
     companion object {
         private fun constraints() = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         fun schedule(c: Context) {
-            val periodic = PeriodicWorkRequestBuilder<Sync>(3, TimeUnit.HOURS)
-                .setConstraints(constraints()).build()
-            WorkManager.getInstance(c).enqueueUniquePeriodicWork("nspu-sync", ExistingPeriodicWorkPolicy.KEEP, periodic)
+            runCatching {
+                val periodic = PeriodicWorkRequestBuilder<Sync>(3, TimeUnit.HOURS)
+                    .setConstraints(constraints()).build()
+                WorkManager.getInstance(c).enqueueUniquePeriodicWork("nspu-sync", ExistingPeriodicWorkPolicy.KEEP, periodic)
+            }.onFailure { WidgetDiagnostics.record(c, "periodic_enqueue_failed", error = it) }
         }
         fun now(c: Context, groupId: Int = Store.scheduleGroupId(c)) {
-            val request = OneTimeWorkRequestBuilder<Sync>()
-                .setInputData(workDataOf("group_id" to groupId, "requested_at" to System.currentTimeMillis()))
-                .setConstraints(constraints()).build()
-            WorkManager.getInstance(c).enqueueUniqueWork("nspu-group-$groupId", ExistingWorkPolicy.KEEP, request)
+            runCatching {
+                val request = OneTimeWorkRequestBuilder<Sync>()
+                    .setInputData(workDataOf("group_id" to groupId, "requested_at" to System.currentTimeMillis()))
+                    .setConstraints(constraints()).build()
+                WorkManager.getInstance(c).enqueueUniqueWork("nspu-group-$groupId", ExistingWorkPolicy.KEEP, request)
+            }.onFailure { WidgetDiagnostics.record(c, "sync_enqueue_failed_group_$groupId", error = it) }
         }
     }
 }

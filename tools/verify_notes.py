@@ -300,6 +300,10 @@ def main():
         adb('shell', 'appwidget', 'grantbind', '--package', HOST, '--user', '0')
         time.sleep(6)
         adb('logcat', '-c')
+        # The fixture was deliberately force-stopped while copying preferences.
+        # First-launch the real APK before binding widgets, as a user does.
+        adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
+        text('Расписание НГПУ')
         verify(args.output)
     except Exception:
         save_ui(args.output, 'failure')

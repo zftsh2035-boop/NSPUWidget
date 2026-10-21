@@ -204,6 +204,8 @@ def main():
         adb('shell', 'appwidget', 'grantbind', '--package', HOST, '--user', '0')
         time.sleep(6)
         adb('logcat', '-c')
+        adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
+        text('Расписание НГПУ')
         verify(args.output)
     except Exception:
         save_ui(args.output, 'failure')
