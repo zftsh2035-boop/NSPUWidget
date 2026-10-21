@@ -32,6 +32,11 @@ object ChangeLog {
                         val n = SiteParser.details(after,date,termStart)
                         val parts = mutableListOf<String>()
                         if (before.time != after.time) parts += "Время ${before.time} → ${after.time}"
+                        if (before.date != after.date) parts += "Дата ${before.date ?: "не указана"} → ${after.date ?: "не указана"}"
+                        if (before.parity != after.parity) {
+                            fun column(value: Int) = when (value) { 1 -> "числитель"; 2 -> "знаменатель"; else -> "обе недели" }
+                            parts += "Недели ${column(before.parity)} → ${column(after.parity)}"
+                        }
                         if (normalized(o.room) != normalized(n.room)) parts += "Ауд. ${o.room} → ${n.room}"
                         if (normalized(o.teacher) != normalized(n.teacher)) parts += "Преподаватель ${o.teacher} → ${n.teacher}"
                         if (o.kind != n.kind && o.kind != "ЗАНЯТИЕ" && n.kind != "ЗАНЯТИЕ") {

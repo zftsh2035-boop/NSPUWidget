@@ -5,7 +5,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /** Pure parsing code: independently testable without Android or network access. */
-data class Lesson(val day: Int, val time: String, val raw: String, val changed: Boolean = false)
+data class Lesson(val day: Int, val time: String, val raw: String, val changed: Boolean = false,
+    val parity: Int = 0, val date: LocalDate? = null)
 data class Notice(val id: String, val text: String, val published: String? = null, val isNew: Boolean = false)
 data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>, val termStart: LocalDate? = null)
 
@@ -69,6 +70,10 @@ object SiteParser {
         val lastGroup = preamble.lastIndexOf(selectedGroup)
         if (lastGroup < 0) return emptyList()
         val banner = preamble.substring(lastGroup + selectedGroup.length).trim()
+        return parseBanner(banner)
+    }
+
+    internal fun parseBanner(banner: String): List<Notice> {
         val headings = noticeHeading.findAll(banner).toList()
         // The university sometimes publishes a banner without the usual salutation.
         val pieces = if (headings.isEmpty()) {
@@ -103,17 +108,34 @@ object SiteParser {
     }
 
     fun applicable(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): Boolean {
-        val explicit = ImportantInfo.dates(lesson.raw)
-        if (explicit.size == 1) return date == explicit.single()
+        fixedDate(lesson)?.let { return date == it }
         val week = academicWeek(date, termStart)
         if (week !in 1..24) return false
-        val weeks = weeksPattern.find(lesson.raw)?.groupValues?.get(1)
-        if (weeks == null) {
-            // Dated exams/consultations appear outside a normal week range.
-            val dateMatch = datePattern.find(lesson.raw) ?: return true
-            val d = dateMatch.groupValues
-            return date.dayOfMonth == d[1].toInt() && date.monthValue == d[2].toInt() && date.year == d[3].toInt()
+        if (lesson.parity == 1 && week % 2 != 1 || lesson.parity == 2 && week % 2 != 0) return false
+        // "с 15.09.26" starts a recurring practice, rather than limiting it to one day.
+        val explicit = ImportantInfo.dates(lesson.raw)
+        if (explicit.size == 1 && Regex("(?iu)\\bс\\s+\\d{1,2}\\.\\d{1,2}\\.").containsMatchIn(lesson.raw)
+            && date < explicit.single()) return false
+        return weekMatches(lesson.raw, week)
+    }
+
+    fun fixedDate(lesson: Lesson): LocalDate? {
+        lesson.date?.let { return it }
+        if (weeksPattern.containsMatchIn(lesson.raw) ||
+            Regex("(?iu)\\b(?:с|по|до)\\s+\\d{1,2}\\.\\d{1,2}\\.").containsMatchIn(lesson.raw)) return null
+        return ImportantInfo.dates(lesson.raw).singleOrNull()
+    }
+
+    internal fun weekMatches(raw: String, week: Int): Boolean {
+        val parts = typePartsPattern.findAll(raw).toList()
+        // A practice block in the annotation excludes ordinary lectures/practicals.
+        if (parts.isNotEmpty()) return parts.any { part ->
+            weekNumbers.findAll(part.groupValues[2]).any { m ->
+                val first = m.groupValues[1].toInt()
+                week in first..(m.groupValues[2].toIntOrNull() ?: first)
+            }
         }
+        val weeks = weeksPattern.find(raw)?.groupValues?.get(1) ?: return true
         return weekNumbers.findAll(weeks).any { m ->
             val first = m.groupValues[1].toInt()
             val last = m.groupValues[2].toIntOrNull() ?: first
@@ -143,7 +165,8 @@ object SiteParser {
     fun key(l: Lesson): String {
         val name = l.raw.substringBefore(',').trim().lowercase()
         val subgroup = subgroupPattern.find(l.raw)?.groupValues?.get(1) ?: if (l.raw.contains("Немецкий язык", true)) "de" else "all"
-        return "${l.day}|${l.time}|$name|$subgroup"
+        return "${l.day}|${l.time}|$name|$subgroup" +
+            (if (l.parity != 0) "|${l.parity}" else "") + (l.date?.let { "|$it" } ?: "")
     }
 
     fun subgroupKey(l: Lesson): String {

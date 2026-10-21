@@ -47,7 +47,9 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     fun scheduleGroupName() = Favorites.find(context, id)?.title
         ?: prefs().getString("group_name", "Группа $id")!!
     fun scheduleGroupCode() = scheduleGroupName().substringBefore(" ").trim()
-    fun source() = "https://schedule.nspu.ru/group_shedule.php?id=$id"
+    private fun extramural() = prefs().getBoolean("extramural", false)
+    fun source() = "https://schedule.nspu.ru/" +
+        (if (extramural()) "zgroup_shedule.php" else "group_shedule.php") + "?id=$id"
     fun focus(now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): FocusedLesson? =
         LessonFocus.choose(now) { day -> forDate(day) }
 
@@ -74,7 +76,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
                 val a = JSONArray(raw)
                 val parsed = (0 until a.length()).map { i ->
                     val o = a.getJSONObject(i)
-                    Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"), o.optBoolean("changed"))
+                    Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"), o.optBoolean("changed"),
+                        o.optInt("parity"), runCatching { LocalDate.parse(o.optString("date")) }.getOrNull())
                 }
                 lessonSnapshot = parsed
                 languageSnapshot = SiteParser.languageOptions(parsed)
@@ -125,7 +128,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         }
     }
 
-    fun needsRefresh() = cached().isEmpty() || missingScheduleLinks() ||
+    fun needsRefresh() = prefs().getInt("parser_version", 0) != 1 || missingScheduleLinks() ||
         System.currentTimeMillis() - prefs().getLong("fetched_at", 0) >= 3L * 60 * 60 * 1000
 
     fun missingScheduleLinks() = !prefs().contains("schedule_links")
@@ -146,7 +149,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val start = termStart()
         val languageGroup = group()
         return cached().filter {
-            val explicitDay = ImportantInfo.dates(it.raw).singleOrNull()?.dayOfWeek?.value?.minus(1)
+            val explicitDay = SiteParser.fixedDate(it)?.dayOfWeek?.value?.minus(1)
             (explicitDay ?: it.day) == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup)
         }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
@@ -161,7 +164,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         Store.changed(context, id)
     }
     private fun lessonsJson(items: List<Lesson>): JSONArray = JSONArray().also { a ->
-        items.forEach { a.put(JSONObject().put("day", it.day).put("time", it.time).put("raw", it.raw).put("changed", it.changed)) }
+        items.forEach { a.put(JSONObject().put("day", it.day).put("time", it.time).put("raw", it.raw)
+            .put("changed", it.changed).put("parity", it.parity).put("date", it.date?.toString() ?: "")) }
     }
     private fun noticesJson(items: List<Notice>): JSONArray = JSONArray().also { a ->
         items.forEach { a.put(JSONObject().put("id", it.id).put("text", it.text).put("published", it.published ?: "").put("isNew", it.isNew)) }
@@ -186,12 +190,13 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
             val doc = Jsoup.parse(connection.inputStream, null, url)
             pageLinks = ScheduleLinks.fromPage(doc)
             doc.select("script,style,nav,footer").remove()
-            snapshot = SiteParser.parse(doc.body().text(), scheduleGroupCode())
+            snapshot = GroupTimetableParser.parse(doc, scheduleGroupCode(), extramural())
         } finally { connection.disconnect() }
 
         val start = snapshot.termStart ?: termStart()
         val changedTerm = snapshot.termStart != null && snapshot.termStart != termStart()
-        val oldLessons = if (changedTerm) emptyList() else cached()
+        // Rebuild an older parser's baseline without reporting format repairs as university edits.
+        val oldLessons = if (changedTerm || prefs().getInt("parser_version", 0) != 1) emptyList() else cached()
         val semanticChanges = ChangeLog.diff(oldLessons, snapshot.lessons, LocalDate.now(ZONE), start)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
         val changes = snapshot.lessons.map { lesson ->
@@ -231,6 +236,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
             .putString("term_start", start.toString())
             .putString("change_history", logJson.toString())
             .putString("schedule_links", ScheduleLinks.encode(pageLinks))
+            .putInt("parser_version", 1)
             .putLong("fetched_at", System.currentTimeMillis())
             .putString("updated", timestamp)
             .putString("error", "")

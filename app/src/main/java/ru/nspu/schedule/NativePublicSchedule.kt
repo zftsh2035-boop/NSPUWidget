@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -299,7 +300,10 @@ internal fun PublicClass.present(): PublicLessonPresentation {
     val weeks = weekNotePattern.findAll(description).map { it.value }.distinct().joinToString(" · ")
     val fallback = description.substringAfter(",", "").trim().substringBefore("(").trim()
     val actualKind = SiteParser.specialKind(description) ?: kind
-    return PublicLessonPresentation(subject, time, details.ifBlank { fallback }, weeks, actualKind, date, SiteParser.displayKind(actualKind))
+    val sourceDetails = description.removePrefix(subject).trimStart(',', ' ')
+        .replace(weekNotePattern, "").trim(' ', ',', ';')
+    return PublicLessonPresentation(subject, time, sourceDetails.ifBlank { details.ifBlank { fallback } },
+        weeks, actualKind, date, SiteParser.displayKind(actualKind))
 }
 
 /** Compact, non-clickable card with all week ranges immediately visible. */
@@ -330,9 +334,11 @@ private fun SimpleTimetableLesson(lesson: PublicLessonPresentation) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (lesson.metadata.isNotBlank()) {
+              SelectionContainer {
                 Text(lesson.metadata,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(lesson.weekNotes, modifier = Modifier.weight(1f),

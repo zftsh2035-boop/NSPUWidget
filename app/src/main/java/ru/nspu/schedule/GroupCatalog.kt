@@ -8,7 +8,7 @@ import java.net.URLEncoder
  * No group ids are hard-coded except the initial default in Store.
  */
 data class Faculty(val id: Int, val title: String)
-data class UniversityGroup(val id: Int, val title: String)
+data class UniversityGroup(val id: Int, val title: String, val extramural: Boolean = false)
 
 object GroupCatalog {
     private const val ROOT = "https://schedule.nspu.ru/"
@@ -30,6 +30,7 @@ object GroupCatalog {
         .mapNotNull { a ->
             val id = Regex("""[?&]id=(\d+)""").find(a.attr("href"))?.groupValues?.get(1)?.toIntOrNull()
             val title = a.text().trim()
-            if (id == null || title.isBlank()) null else UniversityGroup(id, title)
+            if (id == null || title.isBlank()) null else UniversityGroup(id, title,
+                a.attr("href").substringBefore('?').endsWith("zgroup_shedule.php"))
         }.distinctBy { it.id }
 }

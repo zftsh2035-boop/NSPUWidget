@@ -13,3 +13,12 @@ Follow-up regression run on `e7007ee785d40d5bd3752090a01f63d7e969e99d`:
 - Compiled successfully; 69 tests executed, with one skipped live check and one failure in the standalone extramural table fixture. All other new event/annotation/abbreviation tests passed.
 - The failing fixture exposed a real parser assumption: the first table was always sent to the weekly-grid parser. Standalone extramural pages begin with calendar-date rows. Table selection now considers explicit calendar cells and the page type; malformed-HTML fallback preserves the same distinction. Standalone extramural views open their dated section by default.
 - The bold/uppercase assertion is retained and now additionally requires exact dates and the dated section. Rerun pending.
+
+
+Extended public-page audit and follow-up:
+
+- Signed build and all schedule unit/live tests passed on `178026d39c26f1f92265580bfb9191aebec9cde4` (run 39530322224).
+- Full Android 10/API 29 feature and performance workflow passed on the same revision (run 39530322217).
+- Android 15 passed introduction, planner, favorites, future-credit display and diagnostic report. Two automation problems remained: flooding a multiline editor with deletion key events, and tapping Close while Android’s clipboard overlay covered that button. The saved screenshot confirms the latter opened Android’s clipboard editor; the test now waits for that temporary overlay. Short observed input batches / a supported Ctrl+A chord replace the deletion flood.
+- A user-requested wider audit downloaded 26 official pages from five departments. It exposed week-column merging, first-header-table classification, short-year dates and omitted separate session tables. The actual parsers were corrected and 19 focused local JUnit tests pass. See `PUBLIC_AUDIT_v2.12.md` for the sample, concrete examples and limits.
+- A new complete Android build and emulator run is required after the parser corrections; no physical Blackview result is claimed.

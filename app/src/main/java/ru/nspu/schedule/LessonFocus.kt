@@ -12,10 +12,10 @@ object LessonFocus {
 
     private fun bounds(date: LocalDate, lesson: Lesson): Pair<LocalDateTime, LocalDateTime>? {
         val parts = lesson.time.split('-')
-        if (parts.size != 2) return null
+        if (parts.size !in 1..2) return null
         return runCatching {
             Pair(date.atTime(LocalTime.parse(parts[0].trim(), clock)),
-                date.atTime(LocalTime.parse(parts[1].trim(), clock)))
+                date.atTime(LocalTime.parse(parts.getOrElse(1) { parts[0] }.trim(), clock)))
         }.getOrNull()
     }
 

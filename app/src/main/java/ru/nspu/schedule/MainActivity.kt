@@ -918,7 +918,7 @@ class MainActivity : ComponentActivity() {
                             else items(groupOptions) { option ->
                                 Text(option.title, modifier = Modifier.fillMaxWidth()
                                     .clickable {
-                                        Store.selectScheduleGroup(this@MainActivity, option.id, option.title)
+                                        Store.selectScheduleGroup(this@MainActivity, option.id, option.title, option.extramural)
                                         pendingFocusGroup = option.id
                                         selectedTab = 0
                                         refreshWidgets()

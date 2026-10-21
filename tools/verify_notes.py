@@ -41,17 +41,21 @@ def type_into_field(existing, value):
     description = next(n.get('content-desc') for n in existing.iter('node')
                        if n.get('content-desc'))
     tap(existing)
+    if 'keycombination' in adb('shell', 'input', check=False):
+        # Modern Android supports a real Ctrl+A chord, including multiline text.
+        adb('shell', 'input', 'keycombination', '113', '29')
+        adb('shell', 'input', 'keyevent', '67')
     # Observe the field after the IME resizes the dialog before moving its caret.
     # MOVE_END means a visual line's end. A resize during the queued arrow keys
     # can leave a tail after deletion, so observe progress and clear that tail too.
-    for _ in range(4):
+    for _ in range(100):
         current = named_field(description)
         previous = current.get('text', '')
         if not previous:
             break
         down = previous.count('\n') + len(previous) // 10 + 5
         adb('shell', 'input', 'keyevent', '123', *(['20'] * down), '123',
-            *(['67'] * (len(previous) + 3)))
+            *(['67'] * min(8, len(previous))))
         wait_node(lambda n: n.get('class') == 'android.widget.EditText' and
                   n.get('focused') == 'true' and len(n.get('text', '')) < len(previous))
     wait_node(lambda n: n.get('class') == 'android.widget.EditText' and

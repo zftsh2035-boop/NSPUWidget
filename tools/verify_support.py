@@ -8,7 +8,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
-from profile_android import PKG, adb, dump, screenshot, seed, tap, text, wait_node
+from profile_android import PKG, adb, bounds, dump, screenshot, seed, tap, text, wait_node
 from verify_favorites import HOST, PRIMARY, compact_is, full_is, put_pref, set_value, start_host
 
 
@@ -77,7 +77,8 @@ def main():
         wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре' and
                   n.get('text', '').startswith(str(future.day) + ' ' + month))
         for _ in range(10):
-            if any(n.get('text') == 'ЗАЧЁТ' for n in dump().iter('node')):
+            if any(n.get('text') == 'ЗАЧЁТ' and 100 <= bounds(n)[1] and bounds(n)[3] < 530
+                   for n in dump().iter('node')):
                 break
             adb('shell', 'input', 'swipe', 160, 500, 160, 240, 350)
         else:
@@ -101,6 +102,9 @@ def main():
         (args.output / 'diagnostics.txt').write_text(report.get('text'))
         save_ui(args.output, 'widget-diagnostics')
         tap(text('Копировать отчёт'))
+        # Android 13+ places a temporary clipboard overlay over the dialog's
+        # lower-right button. Let it disappear before tapping Close.
+        time.sleep(7)
         tap(text('Закрыть'))
         for _ in range(9):
             about = next((n for n in dump().iter('node') if n.get('text') == 'О приложении'), None)

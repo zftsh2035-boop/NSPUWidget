@@ -38,7 +38,7 @@ object Store {
             .putInt("primary_group_id", legacy.getInt("primary_group_id", id)).commit())
     }
     private val DATA_KEYS = setOf("group_name", "subgroup", "lessons", "notices", "known_notice_ids",
-        "term_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at")
+        "term_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at", "parser_version")
 
     internal fun data(c: Context, id: Int = scheduleGroupId(c)): GroupSchedule {
         initialize(c)
@@ -51,9 +51,11 @@ object Store {
     fun scheduleGroupId(c: Context) = prefs(c).getInt("group_id", 3328)
     fun scheduleGroupName(c: Context) = Favorites.find(c, scheduleGroupId(c))?.title
         ?: prefs(c).getString("group_name", "3.008.2.26 ИСиТвО")!!
-    fun selectScheduleGroup(c: Context, id: Int, name: String) {
+    fun selectScheduleGroup(c: Context, id: Int, name: String, extramural: Boolean? = null) {
         initialize(c)
         Favorites.add(c, id, name)
+        if (extramural != null) c.getSharedPreferences("schedule-group-$id", Context.MODE_PRIVATE)
+            .edit().putBoolean("extramural", extramural).apply()
         prefs(c).edit().putInt("group_id", id).putString("group_name", name)
             .remove("selected_date").remove("offset").apply()
     }

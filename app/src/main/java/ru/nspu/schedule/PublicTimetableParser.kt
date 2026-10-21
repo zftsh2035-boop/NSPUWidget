@@ -55,6 +55,7 @@ object PublicTimetableParser {
     private val ranges = Regex("""(\d+)(?:\s*[-–]\s*(\d+))?""")
     private val kindRanges = Regex("""(л\.з\.|п\.з\.|л\.)\s*:\s*([\d,\s–-]+)\s*нед\.""", RegexOption.IGNORE_CASE)
     private val allTypes = Regex("""(?iu)\((экз\.?|зач\.?|л\.з\.|п\.з\.|л\.)\)""")
+    private val leadingClock = Regex("""^\s*(\d{1,2}[:.]\d{2})\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
 
     fun parse(doc: Document, page: OfficialSchedulePage, offset: Int,
               today: LocalDate = LocalDate.now(ZONE)): PublicTimetable {
@@ -63,10 +64,12 @@ object PublicTimetableParser {
         val title = when (page.kind) {
             OfficialSchedulePage.Kind.ROOM ->
                 doc.selectFirst(".room_info h2")?.text()?.trim()
+            OfficialSchedulePage.Kind.GROUP, OfficialSchedulePage.Kind.EXTRAMURAL_GROUP ->
+                doc.select("h2").firstOrNull { it.text().startsWith("Группа ") }?.text()?.trim()
             else -> doc.selectFirst("td#center > h2")?.text()?.trim()
         }?.takeIf { it.isNotBlank() } ?: page.title
 
-        val weekHeader = directRows(tables.first()).firstOrNull()?.text().orEmpty()
+        val weekHeader = tables.firstOrNull { it.text().contains("Числитель") }?.text().orEmpty()
         val number = Regex("""неделя\s+номер\s+(\d+)""", RegexOption.IGNORE_CASE)
             .find(weekHeader)?.groupValues?.get(1)?.toIntOrNull()
             ?: SiteParser.academicWeek(today.plusWeeks(offset.toLong()))
@@ -75,33 +78,20 @@ object PublicTimetableParser {
         val roomInfo = doc.selectFirst(".room_info .spoiler_body")?.text()?.trim().orEmpty()
         val sessions = mutableListOf<PublicClass>()
         var examSection = false
-        var first = true
-        val center = doc.selectFirst("td#center") ?: doc
-        for (element in center.select("h2, table.rasp_table")) {
+        for (element in doc.select("h2, table.rasp_table")) {
             if (element.tagName() == "h2") {
-                if (element.text().contains("Расписание консультаций", ignoreCase = true)) {
+                if (Regex("(?iu)расписание\\s+(?:консультаций|сессии|гиа)").containsMatchIn(element.text())) {
                     examSection = true
                 }
                 continue
             }
             if (!element.hasClass("rasp_table")) continue
             val calendarTable = page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP || hasCalendarRows(element)
-            if (first && !calendarTable) {
+            if (!calendarTable && element.text().contains("Числитель")) {
                 sessions += weekly(element, number, monday)
-            } else {
+            } else if (calendarTable) {
                 sessions += datedRows(element,
                     if (examSection) PublicSection.EXAMS else PublicSection.DATED)
-            }
-            first = false
-        }
-        // Malformed legacy HTML can move tables out of td#center: never silently lose them.
-        if (sessions.isEmpty() && tables.isNotEmpty()) {
-            tables.forEachIndexed { index, table ->
-                if (index == 0 && page.kind != OfficialSchedulePage.Kind.EXTRAMURAL_GROUP && !hasCalendarRows(table))
-                    sessions += weekly(table, number, monday)
-                else sessions += datedRows(table,
-                    if (index >= 2 && page.kind != OfficialSchedulePage.Kind.EXTRAMURAL_GROUP)
-                        PublicSection.EXAMS else PublicSection.DATED)
             }
         }
         return PublicTimetable(title, number, monday,
@@ -113,7 +103,7 @@ object PublicTimetableParser {
         dated.containsMatchIn(directCells(row).firstOrNull()?.text().orEmpty())
     }
 
-    private fun directRows(table: Element): List<Element> =
+    internal fun directRows(table: Element): List<Element> =
         table.children().flatMap { child ->
             when (child.tagName()) {
                 "tbody", "thead" -> child.children().filter { it.tagName() == "tr" }
@@ -122,14 +112,14 @@ object PublicTimetableParser {
             }
         }
 
-    private fun directCells(row: Element) =
+    internal fun directCells(row: Element) =
         row.children().filter { it.tagName() in listOf("td", "th") }
 
     private fun dayOf(text: String): Int = days.indexOfFirst {
         text.trim().lowercase(Locale.ROOT).startsWith(it)
     }
 
-    private fun time(raw: String): String? {
+    internal fun time(raw: String): String? {
         val m = period.find(raw)
         if (m != null) return m.groupValues[1].replace('.', ':') + "-" +
             m.groupValues[2].replace('.', ':')
@@ -139,7 +129,7 @@ object PublicTimetableParser {
     private fun weekly(table: Element, week: Int, monday: LocalDate): List<PublicClass> {
         val result = mutableListOf<PublicClass>()
         var currentDay = -1
-        for (row in directRows(table).drop(1)) {
+        for (row in directRows(table)) {
             val cells = directCells(row)
             if (cells.isEmpty()) continue
             var start = 0
@@ -157,7 +147,8 @@ object PublicTimetableParser {
             val fragments = splitCell(selected)
             val date = monday.plusDays(currentDay.toLong())
             for (fragment in fragments) {
-                if (matchesWeek(fragment, week)) {
+                if (SiteParser.applicable(Lesson(currentDay,slot,fragment.text),date,
+                        monday.minusWeeks(week - 1L))) {
                     result += lesson(fragment, slot, currentDay, date, PublicSection.WEEKLY)
                 }
             }
@@ -195,9 +186,8 @@ object PublicTimetableParser {
     }
 
     private fun splitCell(cell: Element): List<Fragment> {
-        val html = cell.html().replace(Regex("""(?i)<br\s*/?>"""), " ⟦break⟧ ")
-        // Jsoup text is deterministic; we don't execute arbitrary HTML or JS.
-        val text = Jsoup.parseBodyFragment(html).body().text()
+        // A <br> often separates subject and teacher, not two different lessons.
+        val text = cellText(cell)
         val refs = cell.select("a[href]").mapNotNull { a ->
             val path = a.attr("href").substringBefore('?')
             val type = when (path) {
@@ -212,38 +202,51 @@ object PublicTimetableParser {
             if (title.isBlank()) return@mapNotNull null
             PublicReference(title, "https://schedule.nspu.ru/$path?id=$id", type)
         }
-        return text.split(Regex("""⟦break⟧|;\s*""")).mapNotNull { raw ->
+        val result = mutableListOf<Fragment>()
+        for (raw in text.split(';')) {
             val part = raw.trim().trim(',', ' ', '\u00a0')
-            if (part.length < 4 || part == "—") null else Fragment(part,
-                refs.filter { it.label.length > 2 && part.contains(it.label, ignoreCase = true) }
-                    .distinctBy { it.url })
+            if (part.length < 4 || part == "—") continue
+            val links = refs.filter { it.label.length > 2 && part.contains(it.label, ignoreCase = true) }
+                .distinctBy { it.url }
+            if (!part.contains(',') && !leadingClock.containsMatchIn(part) && result.isNotEmpty()) {
+                val previous = result.removeAt(result.lastIndex)
+                result += previous.copy(text = previous.text + "; " + part,
+                    refs = (previous.refs + links).distinctBy { it.url })
+            } else result += Fragment(part,links)
         }
+        return result
     }
 
     private data class Fragment(val text: String, val refs: List<PublicReference>)
 
-    private fun matchesWeek(fragment: Fragment, week: Int): Boolean {
-        val captures = annotations.findAll(fragment.text).toList()
-        if (captures.isEmpty()) return true
-        // A lesson may combine multiple types, e.g. 2 weeks lecture, 6-10 practical.
-        return captures.any { annotation ->
-            ranges.findAll(annotation.groupValues[1]).any { r ->
-                val first = r.groupValues[1].toInt()
-                val last = r.groupValues[2].toIntOrNull() ?: first
-                week in first..last
+    internal fun cellText(cell: Element): String {
+        val copy = cell.clone()
+        for (link in copy.select("a[href]")) {
+            val href = link.attr("href")
+            val uri = runCatching { java.net.URI(href) }.getOrNull() ?: continue
+            if (uri.scheme in listOf("https", "http") && uri.host != null &&
+                uri.host != "schedule.nspu.ru" && !link.text().contains(href)) {
+                // Preserve public meeting/resource URLs instead of reducing them to "Ссылка".
+                link.text(link.text() + " (" + href + ")")
             }
         }
+        return copy.text()
+    }
+
+    private fun matchesWeek(fragment: Fragment, week: Int): Boolean {
+        return SiteParser.weekMatches(fragment.text, week)
     }
 
     private fun lesson(fragment: Fragment, slot: String, day: Int, date: LocalDate,
                        section: PublicSection): PublicClass {
-        val text = fragment.text
+        val clock = leadingClock.find(fragment.text)
+        val text = if (clock == null) fragment.text else fragment.text.substring(clock.range.last + 1).trim()
         val group = fragment.refs.firstOrNull { it.type == "group" }
         val subject = if (group != null) text.substringBefore(group.label)
             .trimEnd(' ', ',') else text.substringBefore(",").trim()
         val name = subject.ifBlank { text.substringBefore(",").trim() }
         val kind = classify(text, section, date)
-        return PublicClass(slot, name.take(125), text.take(800), kind,
+        return PublicClass(clock?.groupValues?.get(1)?.replace('.', ':') ?: slot, name, text, kind,
             fragment.refs, day, if (section == PublicSection.WEEKLY) null else date, section)
     }
 
