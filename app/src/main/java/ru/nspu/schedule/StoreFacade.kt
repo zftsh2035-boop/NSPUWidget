@@ -38,7 +38,7 @@ object Store {
             .putInt("primary_group_id", legacy.getInt("primary_group_id", id)).commit())
     }
     private val DATA_KEYS = setOf("group_name", "subgroup", "lessons", "notices", "known_notice_ids",
-        "term_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at", "parser_version")
+        "term_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at", "parser_version", "assessment_archive")
 
     internal fun data(c: Context, id: Int = scheduleGroupId(c)): GroupSchedule {
         initialize(c)
@@ -51,18 +51,35 @@ object Store {
     fun scheduleGroupId(c: Context) = prefs(c).getInt("group_id", 3328)
     fun scheduleGroupName(c: Context) = Favorites.find(c, scheduleGroupId(c))?.title
         ?: prefs(c).getString("group_name", "3.008.2.26 ИСиТвО")!!
-    fun selectScheduleGroup(c: Context, id: Int, name: String, extramural: Boolean? = null) {
+    fun selectScheduleGroup(c: Context, id: Int, name: String, extramural: Boolean? = null): Int {
         initialize(c)
-        Favorites.add(c, id, name)
-        if (extramural != null) c.getSharedPreferences("schedule-group-$id", Context.MODE_PRIVATE)
+        val items = Favorites.list(c)
+        val selectedId = if (extramural == null) id else {
+            // Reuse an existing favorite before allocating a new identity, including
+            // pre-2.13 favorites that used an unqualified website id.
+            val existing = items.firstOrNull { old ->
+                GroupIdentity.siteId(old.id) == GroupIdentity.siteId(id) &&
+                    (old.title == name || (old.title.substringBefore(' ') == name.substringBefore(' ') &&
+                        c.getSharedPreferences("schedule-group-${old.id}", Context.MODE_PRIVATE)
+                            .getBoolean("extramural", GroupIdentity.extramural(old.id)) == extramural))
+            }
+            existing?.id ?: if (!extramural && items.any { it.id == id }) GroupIdentity.alternateFullTimeId(id) else id
+        }
+        Favorites.add(c, selectedId, name)
+        if (extramural != null) c.getSharedPreferences("schedule-group-$selectedId", Context.MODE_PRIVATE)
             .edit().putBoolean("extramural", extramural).apply()
-        prefs(c).edit().putInt("group_id", id).putString("group_name", name)
+        prefs(c).edit().putInt("group_id", selectedId).putString("group_name", name)
             .remove("selected_date").remove("offset").apply()
+        return selectedId
     }
     internal fun homeSnapshot(c: Context, id: Int = scheduleGroupId(c)) =
         ScheduleView(data(c, id), prefs(c)).homeSnapshot(Favorites.list(c), Favorites.primaryId(c)) {
             date -> Notes.forDay(c, id, date)
-        }.copy(nextNoteBoundary = runCatching { Notes.nextBoundary(c, id) }.getOrNull())
+        }.let { home ->
+            val now = LocalDateTime.now(ZONE)
+            val assessmentAt = data(c, id).nextAssessmentBoundary(now)?.atZone(ZONE)?.toInstant()?.toEpochMilli()
+            home.copy(nextNoteBoundary = listOfNotNull(runCatching { Notes.nextBoundary(c, id) }.getOrNull(), assessmentAt).minOrNull())
+        }
     fun cached(c: Context) = data(c).cached()
     fun missingScheduleLinks(c: Context) = data(c).missingScheduleLinks()
     fun source(c: Context) = data(c).source()
@@ -100,10 +117,12 @@ internal class ScheduleView(val data: GroupSchedule, private val settings: Share
         notes.exceptionOrNull()?.let { android.util.Log.e("NSPUWidget", "Cannot read personal notes", it) }
         return HomeScheduleSnapshot(date, lessons,
             prepareLessonCards(data.id, date, lessons, start, links, notes.getOrDefault(emptyList())),
-            DayTimeline.build(lessons), focus, data.notices(), data.scheduleGroupName(),
+            DayTimeline.build(lessons), focus, data.notices().filterNot { ImportantInfo.isAssessment(it) }, data.scheduleGroupName(),
             data.group(), data.availableSubgroups(), data.changeHistory(), data.status(), data.error(),
             data.id, favorites, primaryId,
             if (notes.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else "",
-            dayNotes = notes.getOrDefault(emptyList()).filter { it.target.isDay })
+            dayNotes = notes.getOrDefault(emptyList()).filter { it.target.isDay },
+            assessments = data.assessments(now),
+            automaticUpcomingDay = chosenDate(now.toLocalDate()) == null && date > now.toLocalDate())
     }
 }

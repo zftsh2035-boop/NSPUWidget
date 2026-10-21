@@ -25,6 +25,7 @@ object SiteParser {
     private val consultationPattern = Regex("""(?iu)(?:\(\s*конс\.\s*\)|(?<![а-яё])консультация(?![а-яё]))""")
     private val courseworkPattern = Regex("""(?iu)(?:\(\s*курс\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
     private val typePartsPattern = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([0-9,\s\-–]+)\s*нед\.""", RegexOption.IGNORE_CASE)
+    private val plainTypePattern = Regex("""(?iu)\(\s*(л\s*\.\s*з\s*\.|п\s*\.\s*з\s*\.|л\s*\.)\s*\)""")
     private val rangePart = Regex("""\d+\s*[-–]\s*\d+|\d+""")
     private val numberPattern = Regex("""\d+""")
     private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:а\.|ауд\.?|аудитория)\s+([^,;()]+)""")
@@ -104,11 +105,12 @@ object SiteParser {
 
     fun academicWeek(date: LocalDate, start: LocalDate = LocalDate.of(2026, 9, 1)): Int {
         val firstMonday = start.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
-        return (java.time.temporal.ChronoUnit.DAYS.between(firstMonday, date) / 7 + 1).toInt()
+        return (Math.floorDiv(java.time.temporal.ChronoUnit.DAYS.between(firstMonday, date), 7L) + 1).toInt()
     }
 
     fun applicable(lesson: Lesson, date: LocalDate, termStart: LocalDate = LocalDate.of(2026, 9, 1)): Boolean {
         fixedDate(lesson)?.let { return date == it }
+        if (date < termStart) return false
         val week = academicWeek(date, termStart)
         if (week !in 1..24) return false
         if (lesson.parity == 1 && week % 2 != 1 || lesson.parity == 2 && week % 2 != 0) return false
@@ -197,7 +199,8 @@ object SiteParser {
                 week in ends.first()..ends.last()
             }
         }?.groupValues?.get(1) ?: typeParts.firstOrNull()?.groupValues?.get(1)
-        return when (matched?.lowercase()) {
+            ?: plainTypePattern.find(raw)?.groupValues?.get(1)
+        return when (matched?.lowercase()?.replace(Regex("\\s+"), "")) {
             "л." -> "ЛЕКЦИЯ"
             "п.з." -> "ПРАКТИКА"
             "л.з." -> "ЛАБОРАТОРНАЯ"

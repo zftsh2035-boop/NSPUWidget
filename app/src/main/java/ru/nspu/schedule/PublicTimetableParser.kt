@@ -51,10 +51,7 @@ object PublicTimetableParser {
         "сентября" to 9, "октября" to 10, "ноября" to 11, "декабря" to 12
     )
     private val dated = Regex("""(\d{1,2})\s+([а-яё]+)\s+(20\d{2})""", RegexOption.IGNORE_CASE)
-    private val annotations = Regex("""\(([^)]*нед\.[^)]*)\)""", RegexOption.IGNORE_CASE)
-    private val ranges = Regex("""(\d+)(?:\s*[-–]\s*(\d+))?""")
-    private val kindRanges = Regex("""(л\.з\.|п\.з\.|л\.)\s*\)?\s*:\s*([\d,\s–-]+)\s*нед\.""", RegexOption.IGNORE_CASE)
-    private val allTypes = Regex("""(?iu)\((экз\.?|зач\.?|л\.з\.|п\.з\.|л\.)\)""")
+    private val numericDate = Regex("""^\s*(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)""")
     private val leadingClock = Regex("""^\s*(\d{1,2}[:.]\d{2})\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
 
     fun parse(doc: Document, page: OfficialSchedulePage, offset: Int,
@@ -77,6 +74,7 @@ object PublicTimetableParser {
             .plusWeeks(offset.toLong())
         val roomInfo = doc.selectFirst(".room_info .spoiler_body")?.text()?.trim().orEmpty()
         val sessions = mutableListOf<PublicClass>()
+        val termStart = SiteParser.termStart(doc.body().text())
         var examSection = false
         for (element in doc.select("h2, table.rasp_table")) {
             if (element.tagName() == "h2") {
@@ -88,7 +86,7 @@ object PublicTimetableParser {
             if (!element.hasClass("rasp_table")) continue
             val calendarTable = page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP || hasCalendarRows(element)
             if (!calendarTable && element.text().contains("Числитель")) {
-                sessions += weekly(element, number, monday)
+                sessions += weekly(element, number, monday, termStart ?: monday.minusWeeks(number - 1L))
             } else if (calendarTable) {
                 sessions += datedRows(element,
                     if (examSection) PublicSection.EXAMS else PublicSection.DATED)
@@ -99,8 +97,18 @@ object PublicTimetableParser {
             roomInfo, doc.select("a[href*=old=1]").isNotEmpty())
     }
 
-    private fun hasCalendarRows(table: Element): Boolean = directRows(table).any { row ->
-        dated.containsMatchIn(directCells(row).firstOrNull()?.text().orEmpty())
+    internal fun hasCalendarRows(table: Element): Boolean = directRows(table).any { row ->
+        calendarDate(directCells(row).firstOrNull()?.text().orEmpty()) != null
+    }
+
+    private fun calendarDate(text: String): LocalDate? {
+        val match = dated.find(text)
+        val numeric = if (match == null) numericDate.find(text) else null
+        val day = (match ?: numeric)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        val month = if (match != null) monthNames[match.groupValues[2].lowercase(Locale.ROOT)]
+            else numeric!!.groupValues[2].toIntOrNull()
+        val year = (match ?: numeric)!!.groupValues[3].toInt().let { if (it < 100) 2000 + it else it }
+        return month?.let { runCatching { LocalDate.of(year, it, day) }.getOrNull() }
     }
 
     internal fun directRows(table: Element): List<Element> =
@@ -126,7 +134,7 @@ object PublicTimetableParser {
         return raw.trim().replace('.', ':').takeIf { examTime.matches(it) }
     }
 
-    private fun weekly(table: Element, week: Int, monday: LocalDate): List<PublicClass> {
+    private fun weekly(table: Element, week: Int, monday: LocalDate, termStart: LocalDate): List<PublicClass> {
         val result = mutableListOf<PublicClass>()
         var currentDay = -1
         for (row in directRows(table)) {
@@ -147,9 +155,8 @@ object PublicTimetableParser {
             val fragments = splitCell(selected)
             val date = monday.plusDays(currentDay.toLong())
             for (fragment in fragments) {
-                if (SiteParser.applicable(Lesson(currentDay,slot,fragment.text),date,
-                        monday.minusWeeks(week - 1L))) {
-                    result += lesson(fragment, slot, currentDay, date, PublicSection.WEEKLY)
+                if (SiteParser.applicable(Lesson(currentDay,slot,fragment.text),date, termStart)) {
+                    result += lesson(fragment, slot, currentDay, date, PublicSection.WEEKLY, termStart)
                 }
             }
         }
@@ -162,23 +169,24 @@ object PublicTimetableParser {
         for (row in directRows(table)) {
             val cells = directCells(row)
             if (cells.isEmpty()) continue
-            val match = dated.find(cells.first().text())
+            val date = calendarDate(cells.first().text())
             var start = 0
-            if (match != null) {
-                val day = match.groupValues[1].toIntOrNull()
-                val month = monthNames[match.groupValues[2].lowercase(Locale.ROOT)]
-                val year = match.groupValues[3].toIntOrNull()
-                currentDate = if (day != null && month != null && year != null)
-                    runCatching { LocalDate.of(year, month, day) }.getOrNull() else null
-                start++
-            }
+            if (date != null) { currentDate = date; start++ }
             // h1 month rows carry no date/lesson; skip safely.
             if (currentDate == null || start >= cells.size) continue
-            val slot = time(cells[start].text()) ?: continue
             val dayIndex = currentDate.dayOfWeek.value - 1
-            cells.drop(start + 1).forEach { cell ->
-                for (fragment in splitCell(cell)) {
-                    result += lesson(fragment, slot, dayIndex, currentDate, section)
+            // Some NSPU calendars omit <tr> after the first lesson of a date.
+            // Jsoup then repairs several time/description pairs into one row.
+            // Each clock starts its own slot; a later clock is never a subject.
+            while (start < cells.size) {
+                val slot = time(cells[start].text())
+                if (slot == null) { start++; continue }
+                start++
+                while (start < cells.size && time(cells[start].text()) == null) {
+                    for (fragment in splitCell(cells[start])) {
+                        result += lesson(fragment, slot, dayIndex, currentDate, section)
+                    }
+                    start++
                 }
             }
         }
@@ -238,36 +246,16 @@ object PublicTimetableParser {
     }
 
     private fun lesson(fragment: Fragment, slot: String, day: Int, date: LocalDate,
-                       section: PublicSection): PublicClass {
+                       section: PublicSection, termStart: LocalDate = LocalDate.of(2026,9,1)): PublicClass {
         val clock = leadingClock.find(fragment.text)
         val text = if (clock == null) fragment.text else fragment.text.substring(clock.range.last + 1).trim()
         val group = fragment.refs.firstOrNull { it.type == "group" }
         val subject = if (group != null) text.substringBefore(group.label)
             .trimEnd(' ', ',') else text.substringBefore(",").trim()
         val name = subject.ifBlank { text.substringBefore(",").trim() }
-        val kind = classify(text, section, date)
+        val kind = SiteParser.lessonKind(Lesson(day, slot, text), date, termStart)
         return PublicClass(clock?.groupValues?.get(1)?.replace('.', ':') ?: slot, name, text, kind,
             fragment.refs, day, if (section == PublicSection.WEEKLY) null else date, section)
     }
 
-    private fun classify(text: String, section: PublicSection, date: LocalDate): String {
-        SiteParser.specialKind(text)?.let { return it }
-        val marked = kindRanges.findAll(text).firstOrNull { match ->
-            val week = SiteParser.academicWeek(date)
-            ranges.findAll(match.groupValues[2]).any { r ->
-                val from = r.groupValues[1].toInt()
-                val to = r.groupValues[2].toIntOrNull() ?: from
-                week in from..to
-            }
-        }?.groupValues?.get(1) ?: kindRanges.find(text)?.groupValues?.get(1)
-        val type = marked ?: allTypes.find(text)?.groupValues?.get(1)
-        return when (type?.lowercase(Locale.ROOT)) {
-            "л." -> "ЛЕКЦИЯ"
-            "п.з." -> "ПРАКТИКА"
-            "л.з." -> "ЛАБОРАТОРНАЯ"
-            "зач.", "зач" -> "ЗАЧЁТ"
-            "экз.", "экз" -> "ЭКЗАМЕН"
-            else -> "ЗАНЯТИЕ"
-        }
-    }
 }

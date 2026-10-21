@@ -56,7 +56,7 @@ object PublicTimetableRepository {
             System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS) return null
         return runCatching {
             val json = JSONObject(file.readText(Charsets.UTF_8))
-            if (json.optInt("parserVersion") != 1) {
+            if (json.optInt("parserVersion") != 2) {
                 file.delete()
                 return null
             }
@@ -119,7 +119,7 @@ object PublicTimetableRepository {
     }
 
     private fun encode(v: PublicTimetable): JSONObject = JSONObject()
-        .put("parserVersion", 1)
+        .put("parserVersion", 2)
         .put("title", v.title).put("week", v.week)
         .put("weekStart", v.weekStart.toString())
         .put("roomInfo", v.roomInfo).put("hasPast", v.hasPastButton)

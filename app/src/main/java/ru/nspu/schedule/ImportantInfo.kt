@@ -21,20 +21,23 @@ internal object ImportantInfo {
         }.distinct().toList()
     }
     fun isEvent(notice: Notice) = notice.id.startsWith(PREFIX)
+    fun isAssessment(notice: Notice) = isEvent(notice) &&
+        SiteParser.specialKind(notice.text.substringAfter('\n', notice.text)) != null
     fun date(notice: Notice): LocalDate? = if (isEvent(notice))
         dates(notice.text.substringBefore('\n')).singleOrNull() else null
     fun expired(notice: Notice, today: LocalDate) = date(notice)?.isBefore(today) == true
 
-    fun notices(lessons: List<Lesson>, today: LocalDate, termStart: LocalDate): List<Notice> = lessons.mapNotNull { lesson ->
+    fun notices(lessons: List<Lesson>, today: LocalDate, termStart: LocalDate,
+        includePast: Boolean = false): List<Notice> = lessons.mapNotNull { lesson ->
         val textDates = dates(lesson.raw)
         val dates = lesson.date?.let(::listOf) ?: textDates
-        if (dates.isNotEmpty() && dates.all { it.isBefore(today) }) return@mapNotNull null
+        if (!includePast && dates.isNotEmpty() && dates.all { it.isBefore(today) }) return@mapNotNull null
         val special = SiteParser.specialKind(lesson.raw)
         val keyword = alertWords.find(lesson.raw.substringAfter(',', ""))?.value
         val annotation = roomException.containsMatchIn(lesson.raw)
         val event = eventWords.containsMatchIn(lesson.raw.substringBefore(','))
         if (special == null && keyword == null && textDates.isEmpty() && !annotation && !event) return@mapNotNull null
-        if (dates.isEmpty() && (0L..168L).none {
+        if (!includePast && dates.isEmpty() && (0L..168L).none {
             val day = today.plusDays(it)
             day.dayOfWeek.value - 1 == lesson.day && SiteParser.applicable(lesson, day, termStart)
         }) return@mapNotNull null

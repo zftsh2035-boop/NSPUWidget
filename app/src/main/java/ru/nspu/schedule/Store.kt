@@ -46,10 +46,10 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     }
     fun scheduleGroupName() = Favorites.find(context, id)?.title
         ?: prefs().getString("group_name", "Группа $id")!!
-    fun scheduleGroupCode() = scheduleGroupName().substringBefore(" ").trim()
-    private fun extramural() = prefs().getBoolean("extramural", false)
+    fun scheduleGroupCode() = scheduleGroupName().trim()
+    private fun extramural() = prefs().getBoolean("extramural", GroupIdentity.extramural(id))
     fun source() = "https://schedule.nspu.ru/" +
-        (if (extramural()) "zgroup_shedule.php" else "group_shedule.php") + "?id=$id"
+        (if (extramural()) "zgroup_shedule.php" else "group_shedule.php") + "?id=${GroupIdentity.siteId(id)}"
     fun focus(now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): FocusedLesson? =
         LessonFocus.choose(now) { day -> forDate(day) }
 
@@ -102,10 +102,24 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         return (saved + ImportantInfo.notices(cached(), LocalDate.now(ZONE), termStart()))
             .distinctBy { it.id }.filterNot { SiteParser.noticeIsOutdated(it, LocalDate.now(ZONE)) }
     }
+    private fun archivedAssessments(): List<Lesson> = runCatching {
+        val a = JSONArray(prefs().getString("assessment_archive", "[]"))
+        (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"),
+                parity = o.optInt("parity"), date = runCatching { LocalDate.parse(o.optString("date")) }.getOrNull())
+        }
+    }.getOrDefault(emptyList())
+    fun assessments(now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): List<AssessmentEntry> {
+        val lessons = AssessmentList.merge(archivedAssessments(), cached(), now)
+        return AssessmentList.entries(lessons, now, termStart(), group(), notices().associateBy { it.id })
+    }
+    fun nextAssessmentBoundary(now: java.time.LocalDateTime) =
+        AssessmentList.nextBoundary(AssessmentList.merge(archivedAssessments(), cached(), now), now)
     /** Hiding affects only this phone's home-screen widget, never the official site or app. */
     fun widgetNotices(): List<Notice> {
         val hidden = prefs().getStringSet("dismissed_notices", emptySet()) ?: emptySet()
-        return notices().filterNot { it.id in hidden }
+        return notices().filterNot { it.id in hidden || ImportantInfo.isAssessment(it) }
     }
     fun dismissWidgetNotice(noticeId: String) {
         if (noticeId.isBlank() || notices().none { it.id == noticeId }) return
@@ -128,7 +142,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         }
     }
 
-    fun needsRefresh() = prefs().getInt("parser_version", 0) != 1 || missingScheduleLinks() ||
+    fun needsRefresh() = prefs().getInt("parser_version", 0) != 2 || missingScheduleLinks() ||
         System.currentTimeMillis() - prefs().getLong("fetched_at", 0) >= 3L * 60 * 60 * 1000
 
     fun missingScheduleLinks() = !prefs().contains("schedule_links")
@@ -150,7 +164,9 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val languageGroup = group()
         return cached().filter {
             val explicitDay = SiteParser.fixedDate(it)?.dayOfWeek?.value?.minus(1)
-            (explicitDay ?: it.day) == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup)
+            // A legacy calendar cache without dates must never become weekly classes.
+            (!extramural() || it.date != null || SiteParser.fixedDate(it) != null) &&
+                (explicitDay ?: it.day) == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup)
         }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
     }
@@ -161,6 +177,17 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val known = prefs().getString("known_notice_ids", "").orEmpty().split('|').filter(String::isNotBlank)
         prefs().edit().putString("lessons", lessonArray.toString()).putString("notices", noticeArray.toString())
             .putString("known_notice_ids", (known + current.map { it.id }).distinct().takeLast(150).joinToString("|")).apply()
+        Store.changed(context, id)
+    }
+    fun markCategoryRead(assessments: Boolean) {
+        val current = notices()
+        val read = current.filter { ImportantInfo.isAssessment(it) == assessments }
+        val known = prefs().getString("known_notice_ids", "").orEmpty().split('|').filter(String::isNotBlank)
+        val editor = prefs().edit().putString("notices", noticesJson(current.map {
+            if (ImportantInfo.isAssessment(it) == assessments) it.copy(isNew = false) else it
+        }).toString()).putString("known_notice_ids", (known + read.map { it.id }).distinct().takeLast(300).joinToString("|"))
+        if (!assessments) editor.putString("lessons", lessonsJson(cached().map { it.copy(changed = false) }).toString())
+        editor.apply()
         Store.changed(context, id)
     }
     private fun lessonsJson(items: List<Lesson>): JSONArray = JSONArray().also { a ->
@@ -195,8 +222,11 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
 
         val start = snapshot.termStart ?: termStart()
         val changedTerm = snapshot.termStart != null && snapshot.termStart != termStart()
+        val assessmentArchive = AssessmentList.merge(archivedAssessments() + cached(), snapshot.lessons,
+            java.time.LocalDateTime.now(ZONE), changedTerm)
         // Rebuild an older parser's baseline without reporting format repairs as university edits.
-        val oldLessons = if (changedTerm || prefs().getInt("parser_version", 0) != 1) emptyList() else cached()
+        val parserChanged = prefs().getInt("parser_version", 0) != 2
+        val oldLessons = if (changedTerm || parserChanged) emptyList() else cached()
         val semanticChanges = ChangeLog.diff(oldLessons, snapshot.lessons, LocalDate.now(ZONE), start)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
         val changes = snapshot.lessons.map { lesson ->
@@ -209,7 +239,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         }
         val previousNotices = notices().associateBy { it.id }
         val previousNoticeIds = prefs().getString("known_notice_ids", "")!!.split('|').filter { it.isNotBlank() }.toSet()
-        val hasNoticeBaseline = prefs().contains("notices")
+        val hasNoticeBaseline = prefs().contains("notices") && !parserChanged
         val incomingNotices = (snapshot.notices + ImportantInfo.notices(snapshot.lessons, LocalDate.now(ZONE), start))
             .distinctBy { it.id }
         val currentNotices = incomingNotices.map { notice ->
@@ -230,13 +260,14 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         // One atomic SharedPreferences update: lessons and announcements always match one successful fetch.
         val ok = prefs().edit()
             .putString("lessons", lessonsJson(changes).toString())
+            .putString("assessment_archive", lessonsJson(assessmentArchive).toString())
             .putString("notices", noticesJson(currentNotices).toString())
             .putStringSet("dismissed_notices", hiddenNow)
             .putString("known_notice_ids", combinedKnown.joinToString("|"))
             .putString("term_start", start.toString())
             .putString("change_history", logJson.toString())
             .putString("schedule_links", ScheduleLinks.encode(pageLinks))
-            .putInt("parser_version", 1)
+            .putInt("parser_version", 2)
             .putLong("fetched_at", System.currentTimeMillis())
             .putString("updated", timestamp)
             .putString("error", "")

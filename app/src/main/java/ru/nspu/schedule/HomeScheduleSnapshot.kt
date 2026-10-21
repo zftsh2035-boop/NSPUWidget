@@ -21,5 +21,7 @@ internal data class HomeScheduleSnapshot(
     val primaryGroupId: Int,
     val notesError: String = "",
     val dayNotes: List<PersonalNote> = emptyList(),
-    val nextNoteBoundary: Long? = null
+    val nextNoteBoundary: Long? = null,
+    val assessments: List<AssessmentEntry> = emptyList(),
+    val automaticUpcomingDay: Boolean = false
 )

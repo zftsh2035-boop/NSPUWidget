@@ -76,7 +76,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleWidgetIntent(value: Intent) {
-        if (!value.hasExtra("open_group_id") && !value.getBooleanExtra("show_favorites", false)) return
+        if (!value.hasExtra("open_group_id") && !value.getBooleanExtra("show_favorites", false) &&
+            !value.getBooleanExtra("show_notices", false) && !value.getBooleanExtra("show_changes", false) &&
+            !value.getBooleanExtra("show_assessments", false)) return
         lifecycleScope.launch(Dispatchers.IO) {
             Store.initialize(applicationContext)
             val id = value.getIntExtra("open_group_id", -1)
@@ -127,13 +129,14 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             Store.initialize(applicationContext)
             Sync.schedule(applicationContext)
-            if (Store.cached(applicationContext).isEmpty() || Store.missingScheduleLinks(applicationContext)) {
+            if (Store.data(applicationContext).needsRefresh()) {
                 Sync.now(applicationContext)
             }
             // Refresh existing launcher instances immediately after an APK upgrade.
             ScheduleWidget.renderAll(applicationContext)
             if (savedInstanceState == null && !intent.hasExtra("open_group_id") &&
-                !intent.getBooleanExtra("show_notices", false) && !intent.getBooleanExtra("show_changes", false)) {
+                !intent.getBooleanExtra("show_notices", false) && !intent.getBooleanExtra("show_changes", false) &&
+                !intent.getBooleanExtra("show_assessments", false)) {
                 val offer = runCatching { WidgetSetup.shouldOffer(applicationContext) }.getOrDefault(false)
                 withContext(Dispatchers.Main) { offerWidgetIntro = offer }
             }
@@ -321,11 +324,13 @@ class MainActivity : ComponentActivity() {
         }
         var selectedTab by androidx.compose.runtime.saveable.rememberSaveable {
             mutableIntStateOf(when {
-                intent.getBooleanExtra("show_changes", false) -> 2
-                intent.getBooleanExtra("show_notices", false) -> 1
+                intent.getBooleanExtra("show_assessments", false) -> 2
+                intent.getBooleanExtra("show_notices", false) || intent.getBooleanExtra("show_changes", false) -> 1
                 else -> 0
             })
         }
+        var announcementFilter by rememberSaveable { mutableIntStateOf(if (intent.getBooleanExtra("show_changes", false)) 2 else 0) }
+        var viewingAssessment by remember { mutableStateOf<AssessmentEntry?>(null) }
         LaunchedEffect(navigationRequest) {
             if (navigationRequest > 0 && handledNavigation != navigationRequest) {
                 handledNavigation = navigationRequest
@@ -333,7 +338,12 @@ class MainActivity : ComponentActivity() {
                 // the home composition is rebuilt for another group.
                 val noteRequest = incomingNote
                 incomingNote = null
-                selectedTab = if (intent.getBooleanExtra("show_notices", false)) 1 else 0
+                selectedTab = when {
+                    intent.getBooleanExtra("show_assessments", false) -> 2
+                    intent.getBooleanExtra("show_notices", false) || intent.getBooleanExtra("show_changes", false) -> 1
+                    else -> 0
+                }
+                announcementFilter = if (intent.getBooleanExtra("show_changes", false)) 2 else 0
                 favoritePicker = intent.getBooleanExtra("show_favorites", false)
                 editingNote = noteRequest?.takeIf { it.note == null }
                 viewingNote = noteRequest?.takeIf { it.note != null }
@@ -436,8 +446,8 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup) {
             if (selectedTab == 0 && (autoScroll || pendingFocusGroup == home.groupId) && focusIndex >= 0) {
-                val prefix = 3 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
-                    (if (notices.isNotEmpty()) 1 else 0)
+                val prefix = 4 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+                    (if (notices.isNotEmpty()) 1 else 0) + (if (home.automaticUpcomingDay) 1 else 0)
                 listState.scrollToItem(prefix + focusIndex)
                 pendingFocusGroup = null
             } else if (selectedTab != 0) listState.scrollToItem(0)
@@ -480,7 +490,7 @@ class MainActivity : ComponentActivity() {
                         label = { Text("Объявления" + if (notices.any { it.isNew }) " ●" else "") })
                     NavigationBarItem(selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        icon = { Text("↺", fontSize = 22.sp) }, label = { Text("Изменения") })
+                        icon = { Text("▤", fontSize = 22.sp) }, label = { Text("Зачёты") })
                     NavigationBarItem(selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
                         icon = { Text("⚙", fontSize = 22.sp) }, label = { Text("Настройки") })
@@ -528,15 +538,10 @@ class MainActivity : ComponentActivity() {
                             rerender++
                         }
                     }
-                    val importantNotices = notices.filter { ImportantInfo.isEvent(it) }
-                    if (importantNotices.isNotEmpty()) item {
-                        ImportantNoticeStrip(importantNotices) { notice ->
-                            val eventDate = ImportantInfo.date(notice)
-                            if (eventDate != null) {
-                                Store.appView(this@MainActivity).selectDate(eventDate)
-                                rerender++
-                            } else selectedTab = 1
-                        }
+                    item { AssessmentOverviewButton(home.assessments) { selectedTab = 2 } }
+                    if (home.automaticUpcomingDay) item {
+                        Text("Сегодня занятий нет. Ниже — ближайший учебный день.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -626,16 +631,24 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
                             TextButton(onClick = {
-                                Store.markAllRead(this@MainActivity)
+                                Store.data(this@MainActivity).markCategoryRead(assessments = false)
                                 refreshWidgets()
                                 rerender++
                             }) { Text("Прочитано") }
                         }
                     }
-                    if (notices.isEmpty()) item {
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Все", "Сообщения", "Изменения").forEachIndexed { index, label ->
+                                FilterChip(selected = announcementFilter == index,
+                                    onClick = { announcementFilter = index }, label = { Text(label) })
+                            }
+                        }
+                    }
+                    if (notices.isEmpty() && announcementFilter != 2) item {
                         Text("Объявлений на сайте сейчас нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(notices) { notice ->
+                    if (announcementFilter != 2) items(notices, key = { "notice:" + it.id }) { notice ->
                         Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 2.dp,
                             modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
@@ -648,27 +661,57 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    item {
+                    if (announcementFilter != 2) item {
                         OutlinedButton(onClick = {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this@MainActivity))))
                         }) { Text("Открыть оригинал на сайте НГПУ ↗") }
                     }
-                } else if (selectedTab == 2) {
-                    item {
+                    if (announcementFilter != 1) item {
                         Text("История изменений", style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold)
                     }
-                    if (changes.isEmpty()) item {
+                    if (announcementFilter != 1 && changes.isEmpty()) item {
                         Text("Подтверждённых изменений пока нет. После первой синхронизации приложение будет сохранять замену аудитории, преподавателя, времени и типа пары.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(changes) { entry ->
+                    if (announcementFilter != 1) items(changes, key = { "change:$it" }) { entry ->
                         Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp,
                             modifier = Modifier.fillMaxWidth()) {
                             Text(entry, modifier = Modifier.padding(14.dp),
                                 style = MaterialTheme.typography.bodyMedium)
                         }
+                    }
+                } else if (selectedTab == 2) {
+                    item {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Зачёты и экзамены", style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            TextButton(onClick = {
+                                Store.data(this@MainActivity).markCategoryRead(assessments = true); refreshWidgets(); rerender++
+                            }) { Text("Прочитано") }
+                        }
+                    }
+                    if (home.assessments.isEmpty()) item {
+                        Text("Зачёты, экзамены и консультации появятся здесь, когда их опубликуют в расписании.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    val sections = listOf(
+                        "Предстоящие" to home.assessments.filter { it.state !in setOf(AssessmentState.PAST, AssessmentState.UNDATED) },
+                        "Без точной даты" to home.assessments.filter { it.state == AssessmentState.UNDATED },
+                        "Прошедшие" to home.assessments.filter { it.state == AssessmentState.PAST }.asReversed())
+                    for ((label, entries) in sections) {
+                        if (entries.isNotEmpty()) item(key = "assessment-section:$label") {
+                            Text("$label · ${entries.size}", style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold)
+                        }
+                        items(entries, key = { "assessment:" + it.notice.id }) { entry ->
+                            AssessmentCard(entry) { viewingAssessment = entry }
+                        }
+                    }
+                    if (home.assessments.any { it.state == AssessmentState.PAST }) item {
+                        Text("«Прошёл» означает, что время события прошло. Результат сдачи здесь не отмечается. Записи сохраняются до смены семестра.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     item {
@@ -870,6 +913,21 @@ class MainActivity : ComponentActivity() {
                 onDelete = { writeNote(request, delete = true) })
         }
 
+        viewingAssessment?.let { entry ->
+            AlertDialog(onDismissRequest = { viewingAssessment = null },
+                title = { Text(entry.info.subject) },
+                text = { Text(entry.notice.text) },
+                confirmButton = { TextButton(onClick = { viewingAssessment = null }) { Text("Закрыть") } },
+                dismissButton = {
+                    entry.date?.let { eventDate ->
+                        TextButton(onClick = {
+                            viewingAssessment = null
+                            Store.appView(this@MainActivity).selectDate(eventDate)
+                            selectedTab = 0; rerender++
+                        }) { Text("Открыть этот день") }
+                    }
+                })
+        }
         if (favoritePicker) {
             FavoritesDialog(home.favorites, home.groupId, home.primaryGroupId,
                 onDismiss = { favoritePicker = false },
@@ -918,11 +976,11 @@ class MainActivity : ComponentActivity() {
                             else items(groupOptions) { option ->
                                 Text(option.title, modifier = Modifier.fillMaxWidth()
                                     .clickable {
-                                        Store.selectScheduleGroup(this@MainActivity, option.id, option.title, option.extramural)
-                                        pendingFocusGroup = option.id
+                                        val selected = Store.selectScheduleGroup(this@MainActivity, option.id, option.title, option.extramural)
+                                        pendingFocusGroup = selected
                                         selectedTab = 0
                                         refreshWidgets()
-                                        Sync.now(this@MainActivity, option.id)
+                                        Sync.now(this@MainActivity, selected)
                                         picker = 0
                                         rerender++
                                     }.padding(vertical = 12.dp),

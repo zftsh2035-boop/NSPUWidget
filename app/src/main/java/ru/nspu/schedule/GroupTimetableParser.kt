@@ -11,7 +11,8 @@ internal object GroupTimetableParser {
 
     fun parse(doc: Document, selectedGroup: String, extramural: Boolean = false): PageSnapshot {
         val flat = doc.body().text()
-        require(flat.contains("Группа $selectedGroup") || flat.contains(">> $selectedGroup")) {
+        val selectedCode = Regex("""\d\.\d{3}\.\d{1,2}\.\d{2}""").find(selectedGroup)?.value ?: selectedGroup
+        require(doc.select("h2").any { it.text().startsWith("Группа ") && it.text().contains(selectedCode) }) {
             "Это не страница выбранной группы: $selectedGroup"
         }
         val tables = doc.select("table.rasp_table")
@@ -25,7 +26,7 @@ internal object GroupTimetableParser {
             val end = academicHeading.find(banner)?.range?.first ?: banner.length
             notices += SiteParser.parseBanner(banner.take(end))
         }
-        for (table in tables.filter { it.text().contains("Числитель") }) {
+        for (table in tables.filter { it.text().contains("Числитель") && !PublicTimetableParser.hasCalendarRows(it) }) {
             var day = -1
             for (row in PublicTimetableParser.directRows(table)) {
                 val cells = PublicTimetableParser.directCells(row)

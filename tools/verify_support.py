@@ -69,10 +69,13 @@ def main():
         assert not any('should-not-appear' in n.get('text', '') for n in dump().iter('node'))
         save_ui(args.output, 'update-changes')
         tap(text('Позже'))
-        text('Важное из расписания')
-        event = wait_node(lambda n: n.get('text', '').startswith('ЗАЧЁТ · ' + future.strftime('%d.%m.%Y')))
-        save_ui(args.output, 'future-credit-card')
+        tap(text('Зачёты'))
+        text('Зачёты и экзамены')
+        event = text('ЗАЧЁТ')
+        save_ui(args.output, 'future-credit-list')
         tap(event)
+        wait_node(lambda n: n.get('text', '').startswith('ЗАЧЁТ · ' + future.strftime('%d.%m.%Y')))
+        tap(text('Открыть этот день'))
         month = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'][future.month - 1]
         wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре' and
                   n.get('text', '').startswith(str(future.day) + ' ' + month))

@@ -30,7 +30,7 @@ object GroupCatalog {
         .mapNotNull { a ->
             val id = Regex("""[?&]id=(\d+)""").find(a.attr("href"))?.groupValues?.get(1)?.toIntOrNull()
             val title = a.text().trim()
-            if (id == null || title.isBlank()) null else UniversityGroup(id, title,
-                a.attr("href").substringBefore('?').endsWith("zgroup_shedule.php"))
+            val extra = a.attr("href").substringBefore('?').endsWith("zgroup_shedule.php")
+            if (id == null || title.isBlank()) null else UniversityGroup(GroupIdentity.catalogueId(id, extra), title, extra)
         }.distinctBy { it.id }
 }
