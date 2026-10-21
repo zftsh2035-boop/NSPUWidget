@@ -76,11 +76,40 @@ class DatedTimetableTest {
         assertEquals("ЛЕКЦИЯ",SiteParser.lessonKind(lesson,date))
     }
     @Test fun explicitStartAndRoomWordVariantsStayReadable() {
-        val doc = source("<tr><td>26 октября 2026 Понедельник</td><td>12:10-13:40</td><td>Конференция, Преподаватель (конс.), а. 216а Начало - 13.30</td></tr>")
+        val doc = source("<tr><td>26 октября 2026 Понедельник</td><td>12:10-13:40</td><td>Конференция, Преподаватель (конс.), <a href='room_shedule.php?id=1'>а. 216а</a>Начало - 13.30</td></tr>")
         val lesson = GroupTimetableParser.parse(doc,code,true).lessons.single()
         assertEquals("13:30",lesson.time)
         assertEquals("216а",SiteParser.details(lesson,date).room)
         for (room in listOf("а.404","аудитория 404","каб. 404","кабинет 404"))
             assertEquals(room,"404",SiteParser.details(lesson.copy(raw="Предмет, Преподаватель (экз.), $room"),date).room)
+    }
+    @Test fun mistypedEndYearCannotReplaceTheFirstFromDate() {
+        assertEquals(LocalDate.of(2026,9,1),SiteParser.termStart(
+            "Теоретическое обучение с 01.09.2026 по 25.01.2026, Экзаменационная сессия с 26.01.2027",date))
+        assertNull(SiteParser.termStart("Теоретическое обучение с 01.09.202 по 10.01.2027",date))
+        assertEquals(LocalDate.of(2026,9,1),SiteParser.termStart(
+            "Теоретическое обучение 01.09.2026 по 18.01.2027, производственная практика с 10.11.2026 по 27.11.2026",date))
+    }
+    @Test fun universityWeekNumbersRemainCommonWhenGroupTeachingStartsLater() {
+        val today = LocalDate.of(2026,10,22)
+        val doc = Jsoup.parse("<h2>Группа $code</h2><div>Теоретическое обучение с 07.09.26 по 30.12.26</div><table class='rasp_table'><tr><td>Числитель</td><td>Знаменатель, текущая неделя номер 8</td></tr><tr><td>Четверг</td><td>8:30-10:00</td><td colspan='2'>Предмет, Преподаватель (п.з.: 8-12 нед.)</td></tr></table>")
+        val parsed = GroupTimetableParser.parse(doc,code,false,today)
+        assertEquals(8,SiteParser.academicWeek(today,parsed.termStart!!))
+        assertEquals(LocalDate.of(2026,9,7),parsed.teachingStart)
+        assertTrue(SiteParser.applicable(parsed.lessons.single(),today,parsed.termStart))
+        assertEquals(1,PublicTimetableParser.parse(doc,OfficialSchedulePage(OfficialSchedulePage.Kind.GROUP,1,code),0,today).sessions.size)
+        val next = Jsoup.parse(doc.outerHtml().replace("номер 8","номер 9"))
+        assertEquals(1,PublicTimetableParser.parse(next,OfficialSchedulePage(OfficialSchedulePage.Kind.GROUP,1,code),1,today).sessions.size)
+    }
+    @Test fun theNextPublishedSemesterStartsItsOwnHistoryInsteadOfResettingOnNewYear() {
+        val source = "Теоретическое обучение с 01.09.2026 по 25.01.2027; Экзаменационная сессия с 26.01.2027; Восьмой семестр теоретическое обучение с 06.02.2027 по 22.06.2027"
+        assertEquals(LocalDate.of(2026,9,1),SiteParser.termStart(source,LocalDate.of(2027,1,10)))
+        assertEquals(LocalDate.of(2027,2,6),SiteParser.termStart(source,LocalDate.of(2027,2,10)))
+    }
+    @Test fun closedUniversityPagesHaveAnExplicitUnavailableState() {
+        val doc = Jsoup.parse("<p>Расписание этой группы закрыто для просмотра (как правило, так бывает во время формирования расписания на следующий семестр)</p>")
+        val failure = runCatching { GroupTimetableParser.parse(doc,code,true) }.exceptionOrNull()
+        assertTrue(failure is ScheduleUnavailableException)
+        assertTrue(failure!!.message!!.contains("временно закрыл"))
     }
 }

@@ -8,9 +8,14 @@ import java.time.format.DateTimeFormatter
 data class Lesson(val day: Int, val time: String, val raw: String, val changed: Boolean = false,
     val parity: Int = 0, val date: LocalDate? = null)
 data class Notice(val id: String, val text: String, val published: String? = null, val isNew: Boolean = false)
-data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>, val termStart: LocalDate? = null)
+data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>, val termStart: LocalDate? = null,
+    val teachingStart: LocalDate? = null)
+internal class ScheduleUnavailableException : IllegalStateException("НГПУ временно закрыл расписание этой группы для просмотра — обычно на время его подготовки.")
 
 object SiteParser {
+    internal fun requireReadable(text: String) {
+        if (text.contains("Расписание этой группы закрыто для просмотра",ignoreCase=true)) throw ScheduleUnavailableException()
+    }
     private val weekdays = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
     private val timePattern = Regex("(?<!\\d)(?:[01]?\\d|2[0-2])[:.]\\d{2}\\s*[-–—]\\s*(?:[01]?\\d|2[0-2])[:.]\\d{2}")
     private val weekdayPattern = Regex("(?<![А-Яа-яЁё])(?:Понедельник|Вторник|Среда|Четверг|Пятница|Суббота)(?![А-Яа-яЁё])")
@@ -96,12 +101,29 @@ object SiteParser {
     }
 
     /** The university publishes the dates for each semester in the page header. */
-    fun termStart(text: String): LocalDate? {
-        val heading = Regex("""(?iu)теоретическое\s+обучение""").find(text) ?: return null
-        val after = text.substring(heading.range.last + 1).take(400)
-        val end = Regex("""(?iu)экзаменационная\s+сессия|каникулы|нерабочие|числитель""")
-            .find(after)?.range?.first ?: after.length
-        return ImportantInfo.dates(after.take(end)).minOrNull()
+    fun termStart(text: String, today: LocalDate = LocalDate.now(ZONE)): LocalDate? {
+        val preamble = text.substringBefore("Числитель")
+        val starts = Regex("""(?iu)теоретическое\s+обучение""").findAll(preamble).mapNotNull { heading ->
+            val after = preamble.substring(heading.range.last + 1).take(300)
+            val end = Regex("""(?iu)экзаменационная\s+сессия|каникулы|нерабочие|теоретическое|(?:производственная|учебная|педагогическая)\s+практика""")
+                .find(after)?.range?.first ?: after.length
+            // Read the first date of teaching, with or without the word "с".
+            // A mistyped end year (e.g. 31.12.2025)
+            // must never shift the entire timetable into the previous semester.
+            val from = Regex("""(?<!\d)(\d{1,2}\.\d{1,2}\.\d{2,4})(?!\d)""")
+                .find(after.take(end))?.groupValues?.get(1) ?: return@mapNotNull null
+            ImportantInfo.dates(from).singleOrNull()
+        }.distinct().toList()
+        return starts.filter { it <= today }.maxOrNull() ?: starts.minOrNull()
+    }
+
+    /** Week labels are university-wide, even when a group's teaching starts later. */
+    internal fun weekEpoch(text: String, today: LocalDate, publishedStart: LocalDate?): LocalDate? {
+        val number = Regex("""(?iu)текущая\s+неделя\s+номер\s+(\d+)""").find(text)
+            ?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..30 } ?: return publishedStart
+        if (publishedStart != null && academicWeek(today,publishedStart) == number) return publishedStart
+        return today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+            .minusWeeks(number-1L)
     }
 
     fun academicWeek(date: LocalDate, start: LocalDate = LocalDate.of(2026, 9, 1)): Int {

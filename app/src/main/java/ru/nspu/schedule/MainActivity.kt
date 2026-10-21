@@ -447,7 +447,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup) {
             if (selectedTab == 0 && (autoScroll || pendingFocusGroup == home.groupId) && focusIndex >= 0) {
                 val prefix = 4 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
-                    (if (notices.isNotEmpty()) 1 else 0) + (if (home.automaticUpcomingDay) 1 else 0)
+                    (if (notices.isNotEmpty()) 1 else 0) + (if (home.automaticUpcomingDay) 1 else 0) +
+                    (if (error.isNotBlank()) 1 else 0)
                 listState.scrollToItem(prefix + focusIndex)
                 pendingFocusGroup = null
             } else if (selectedTab != 0) listState.scrollToItem(0)
@@ -539,6 +540,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     item { AssessmentOverviewButton(home.assessments) { selectedTab = 2 } }
+                    if (error.isNotBlank()) item {
+                        Text((if (home.cachedLessonCount > 0) "Показана сохранённая копия. " else "") + error,
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
                     if (home.automaticUpcomingDay) item {
                         Text("Сегодня занятий нет. Ниже — ближайший учебный день.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -594,7 +599,9 @@ class MainActivity : ComponentActivity() {
                     if (lessons.isEmpty()) item {
                         Surface(shape = RoundedCornerShape(20.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                            Text("Занятий на выбранный день нет. Если расписание ещё не загружено, нажми ⟳.",
+                            Text(if (home.cachedLessonCount == 0 && error.isBlank() && lastUpdate != "Ещё не загружено")
+                                "На сайте пока нет опубликованных занятий для этой группы."
+                                else "Занятий на выбранный день нет. Чтобы проверить расписание, нажми ⟳.",
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
@@ -832,7 +839,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (selectedTab != 3) item {
                     Text(
-                        if (error.isNotBlank()) "Нет связи · сохранённая версия ($error)"
+                        if (error.isNotBlank()) "Не удалось обновить · $error"
                         else "Проверено: $lastUpdate · автообновление примерно раз в 3 часа",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

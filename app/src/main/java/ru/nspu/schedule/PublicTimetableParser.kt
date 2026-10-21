@@ -56,6 +56,7 @@ object PublicTimetableParser {
 
     fun parse(doc: Document, page: OfficialSchedulePage, offset: Int,
               today: LocalDate = LocalDate.now(ZONE)): PublicTimetable {
+        SiteParser.requireReadable(doc.body().text())
         val tables = doc.select("table.rasp_table")
         require(tables.isNotEmpty()) { "На странице НГПУ не найдены таблицы расписания" }
         val title = when (page.kind) {
@@ -74,7 +75,9 @@ object PublicTimetableParser {
             .plusWeeks(offset.toLong())
         val roomInfo = doc.selectFirst(".room_info .spoiler_body")?.text()?.trim().orEmpty()
         val sessions = mutableListOf<PublicClass>()
-        val termStart = SiteParser.termStart(doc.body().text())
+        val referenceDay = today.plusWeeks(offset.toLong())
+        val publishedStart = SiteParser.termStart(doc.body().text(),referenceDay)
+        val termStart = SiteParser.weekEpoch(doc.body().text(),referenceDay,publishedStart)
         var examSection = false
         for (element in doc.select("h2, table.rasp_table")) {
             if (element.tagName() == "h2") {
@@ -86,7 +89,8 @@ object PublicTimetableParser {
             if (!element.hasClass("rasp_table")) continue
             val calendarTable = page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP || hasCalendarRows(element)
             if (!calendarTable && element.text().contains("Числитель")) {
-                sessions += weekly(element, number, monday, termStart ?: monday.minusWeeks(number - 1L))
+                sessions += weekly(element, number, monday, termStart ?: monday.minusWeeks(number - 1L),
+                    publishedStart?.takeIf { termStart == null || it >= termStart })
             } else if (calendarTable) {
                 sessions += datedRows(element,
                     if (examSection) PublicSection.EXAMS else PublicSection.DATED)
@@ -134,7 +138,8 @@ object PublicTimetableParser {
         return raw.trim().replace('.', ':').takeIf { examTime.matches(it) }
     }
 
-    private fun weekly(table: Element, week: Int, monday: LocalDate, termStart: LocalDate): List<PublicClass> {
+    private fun weekly(table: Element, week: Int, monday: LocalDate, termStart: LocalDate,
+        teachingStart: LocalDate?): List<PublicClass> {
         val result = mutableListOf<PublicClass>()
         var currentDay = -1
         for (row in directRows(table)) {
@@ -155,7 +160,9 @@ object PublicTimetableParser {
             val fragments = splitCell(selected)
             val date = monday.plusDays(currentDay.toLong())
             for (fragment in fragments) {
-                if (SiteParser.applicable(Lesson(currentDay,slot,fragment.text),date, termStart)) {
+                val source = Lesson(currentDay,slot,fragment.text)
+                if ((teachingStart == null || date >= teachingStart || SiteParser.fixedDate(source) != null) &&
+                    SiteParser.applicable(source,date, termStart)) {
                     result += lesson(fragment, slot, currentDay, date, PublicSection.WEEKLY, termStart)
                 }
             }
@@ -230,6 +237,8 @@ object PublicTimetableParser {
     internal fun cellText(cell: Element): String {
         val copy = cell.clone()
         for (link in copy.select("a[href]")) {
+            val nextText = (link.nextSibling() as? org.jsoup.nodes.TextNode)?.wholeText
+            if (nextText?.firstOrNull()?.isLetterOrDigit() == true) link.after(" ")
             val href = link.attr("href")
             val uri = runCatching { java.net.URI(href) }.getOrNull() ?: continue
             if (uri.scheme in listOf("https", "http") && uri.host != null &&

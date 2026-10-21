@@ -142,7 +142,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         }
     }
 
-    fun needsRefresh() = prefs().getInt("parser_version", 0) != 2 || missingScheduleLinks() ||
+    fun needsRefresh() = prefs().getInt("parser_version", 0) != 3 || missingScheduleLinks() ||
         System.currentTimeMillis() - prefs().getLong("fetched_at", 0) >= 3L * 60 * 60 * 1000
 
     fun missingScheduleLinks() = !prefs().contains("schedule_links")
@@ -162,10 +162,12 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val day = date.dayOfWeek.value - 1
         val start = termStart()
         val languageGroup = group()
+        val teachingStart = runCatching { LocalDate.parse(prefs().getString("teaching_start", "")) }.getOrNull()
         return cached().filter {
             val explicitDay = SiteParser.fixedDate(it)?.dayOfWeek?.value?.minus(1)
             // A legacy calendar cache without dates must never become weekly classes.
             (!extramural() || it.date != null || SiteParser.fixedDate(it) != null) &&
+                (teachingStart == null || date >= teachingStart || SiteParser.fixedDate(it) != null) &&
                 (explicitDay ?: it.day) == day && SiteParser.applicable(it, date, start) && SiteParser.subgroupFits(it.raw, languageGroup)
         }
             .sortedWith(compareBy<Lesson>({ it.time.substringBefore(':').toIntOrNull() ?: 99 }, { it.time.substringAfter(':').take(2).toIntOrNull() ?: 0 }))
@@ -222,7 +224,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         if (requestedAt > 0 && prefs().getLong("fetched_at", 0) >= requestedAt)
             return SyncOutcome(emptyList(), 0)
         var resolvedExtra = extramural()
-        val received = try { download(resolvedExtra) } catch (original: IllegalArgumentException) {
+        val received = try { download(resolvedExtra) } catch (original: Exception) {
+            if (original !is IllegalArgumentException && original !is ScheduleUnavailableException) throw original
             // Older favorites did not remember zgroup_shedule. Repair the source
             // only after the other official page validates against this group's code.
             val alternative = runCatching { download(!resolvedExtra) }
@@ -237,7 +240,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val assessmentArchive = AssessmentList.merge(archivedAssessments() + cached(), snapshot.lessons,
             java.time.LocalDateTime.now(ZONE), changedTerm)
         // Rebuild an older parser's baseline without reporting format repairs as university edits.
-        val parserChanged = prefs().getInt("parser_version", 0) != 2
+        val parserChanged = prefs().getInt("parser_version", 0) != 3
         val oldLessons = if (changedTerm || parserChanged) emptyList() else cached()
         val semanticChanges = ChangeLog.diff(oldLessons, snapshot.lessons, LocalDate.now(ZONE), start)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
@@ -278,9 +281,10 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
             .putStringSet("dismissed_notices", hiddenNow)
             .putString("known_notice_ids", combinedKnown.joinToString("|"))
             .putString("term_start", start.toString())
+            .putString("teaching_start", snapshot.teachingStart?.toString() ?: "")
             .putString("change_history", logJson.toString())
             .putString("schedule_links", ScheduleLinks.encode(pageLinks))
-            .putInt("parser_version", 2)
+            .putInt("parser_version", 3)
             .putLong("fetched_at", System.currentTimeMillis())
             .putString("updated", timestamp)
             .putString("error", "")

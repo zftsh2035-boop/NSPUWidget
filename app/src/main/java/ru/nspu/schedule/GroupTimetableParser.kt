@@ -9,9 +9,11 @@ internal object GroupTimetableParser {
     private val oneTime = Regex("""^\s*(\d{1,2}[:.]\d{2}(?:\s*[-–—]\s*\d{1,2}[:.]\d{2})?)\s*(?:ч\.?)?\s+(?=[А-Яа-яЁё])""")
     private val academicHeading = Regex("""(?iu)\d+\s+семестр|теоретическое\s+обучение|экзаменационная\s+сессия|каникулы|(?:адаптационная|педагогическая)\s+практика\s+с""")
 
-    fun parse(doc: Document, selectedGroup: String, extramural: Boolean = false): PageSnapshot {
+    fun parse(doc: Document, selectedGroup: String, extramural: Boolean = false,
+        today: LocalDate = LocalDate.now(ZONE)): PageSnapshot {
         val flat = doc.body().text()
-        val selectedCode = Regex("""\d\.\d{3}\.\d{1,2}\.\d{2}""").find(selectedGroup)?.value ?: selectedGroup
+        SiteParser.requireReadable(flat)
+        val selectedCode = Regex("""\d\.\d{3}\.\d{1,2}\.\d{2}(?:\.\d+)?""").find(selectedGroup)?.value ?: selectedGroup
         require(doc.select("h2").any { it.text().contains(selectedCode) }) {
             "Это не страница выбранной группы: $selectedGroup"
         }
@@ -65,7 +67,9 @@ internal object GroupTimetableParser {
         val dated = PublicTimetableParser.parse(doc, OfficialSchedulePage(kind,1,selectedGroup),0)
             .sessions.filter { it.section != PublicSection.WEEKLY }
         lessons += dated.map { Lesson(it.day,it.time,it.description,date = it.date) }
+        val published = SiteParser.termStart(flat,today)
+        val epoch = SiteParser.weekEpoch(flat,today,published)
         return PageSnapshot(lessons.distinctBy { listOf(it.day,it.time,it.raw,it.parity,it.date) },
-            notices.distinctBy { it.id },SiteParser.termStart(flat))
+            notices.distinctBy { it.id },epoch, published?.takeIf { epoch == null || it >= epoch })
     }
 }

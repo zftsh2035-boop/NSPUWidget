@@ -38,7 +38,7 @@ object Store {
             .putInt("primary_group_id", legacy.getInt("primary_group_id", id)).commit())
     }
     private val DATA_KEYS = setOf("group_name", "subgroup", "lessons", "notices", "known_notice_ids",
-        "term_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at", "parser_version", "assessment_archive")
+        "term_start", "teaching_start", "change_history", "dismissed_notices", "updated", "error", "schedule_links", "fetched_at", "parser_version", "assessment_archive")
 
     internal fun data(c: Context, id: Int = scheduleGroupId(c)): GroupSchedule {
         initialize(c)
@@ -123,6 +123,7 @@ internal class ScheduleView(val data: GroupSchedule, private val settings: Share
             if (notes.isFailure) "Не удалось прочитать заметки. Попробуй открыть их ещё раз." else "",
             dayNotes = notes.getOrDefault(emptyList()).filter { it.target.isDay },
             assessments = data.assessments(now),
-            automaticUpcomingDay = chosenDate(now.toLocalDate()) == null && date > now.toLocalDate())
+            automaticUpcomingDay = chosenDate(now.toLocalDate()) == null && date > now.toLocalDate(),
+            cachedLessonCount = data.cached().size)
     }
 }

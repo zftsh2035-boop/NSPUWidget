@@ -23,5 +23,6 @@ internal data class HomeScheduleSnapshot(
     val dayNotes: List<PersonalNote> = emptyList(),
     val nextNoteBoundary: Long? = null,
     val assessments: List<AssessmentEntry> = emptyList(),
-    val automaticUpcomingDay: Boolean = false
+    val automaticUpcomingDay: Boolean = false,
+    val cachedLessonCount: Int = 0
 )
