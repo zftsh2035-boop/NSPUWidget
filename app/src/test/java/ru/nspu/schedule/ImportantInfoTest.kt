@@ -65,5 +65,8 @@ class ImportantInfoTest {
           </td></tr></table>""", page.url)
         val parsed = PublicTimetableParser.parse(doc, page, 0, today)
         assertEquals(setOf("ЗАЧЁТ", "ЭКЗАМЕН"), parsed.sessions.map { it.kind }.toSet())
+        assertTrue(parsed.sessions.all { it.section == PublicSection.DATED })
+        assertEquals(setOf(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 4)),
+            parsed.sessions.map { it.date }.toSet())
     }
 }

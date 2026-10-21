@@ -40,7 +40,9 @@ fun NativePublicSchedule(
 ) {
     val context = LocalContext.current.applicationContext
     var weekShift by rememberSaveable(page.url) { mutableIntStateOf(0) }
-    var selectedTab by rememberSaveable(page.url) { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable(page.url) {
+        mutableIntStateOf(if (page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP) 1 else 0)
+    }
     var showPast by rememberSaveable(page.url) { mutableStateOf(false) }
     var refreshCounter by remember(page.url) { mutableIntStateOf(0) }
     var forceRefresh by remember(page.url) { mutableStateOf(false) }

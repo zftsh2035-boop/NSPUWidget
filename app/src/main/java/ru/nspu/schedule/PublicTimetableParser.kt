@@ -85,25 +85,32 @@ object PublicTimetableParser {
                 continue
             }
             if (!element.hasClass("rasp_table")) continue
-            if (first) {
+            val calendarTable = page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP || hasCalendarRows(element)
+            if (first && !calendarTable) {
                 sessions += weekly(element, number, monday)
-                first = false
             } else {
                 sessions += datedRows(element,
                     if (examSection) PublicSection.EXAMS else PublicSection.DATED)
             }
+            first = false
         }
         // Malformed legacy HTML can move tables out of td#center: never silently lose them.
         if (sessions.isEmpty() && tables.isNotEmpty()) {
-            sessions += weekly(tables.first(), number, monday)
-            tables.drop(1).forEachIndexed { index, table ->
-                sessions += datedRows(table,
-                    if (index >= 1) PublicSection.EXAMS else PublicSection.DATED)
+            tables.forEachIndexed { index, table ->
+                if (index == 0 && page.kind != OfficialSchedulePage.Kind.EXTRAMURAL_GROUP && !hasCalendarRows(table))
+                    sessions += weekly(table, number, monday)
+                else sessions += datedRows(table,
+                    if (index >= 2 && page.kind != OfficialSchedulePage.Kind.EXTRAMURAL_GROUP)
+                        PublicSection.EXAMS else PublicSection.DATED)
             }
         }
         return PublicTimetable(title, number, monday,
             sessions.distinctBy { listOf(it.section, it.date, it.day, it.time, it.description).joinToString("|") },
             roomInfo, doc.select("a[href*=old=1]").isNotEmpty())
+    }
+
+    private fun hasCalendarRows(table: Element): Boolean = directRows(table).any { row ->
+        dated.containsMatchIn(directCells(row).firstOrNull()?.text().orEmpty())
     }
 
     private fun directRows(table: Element): List<Element> =
