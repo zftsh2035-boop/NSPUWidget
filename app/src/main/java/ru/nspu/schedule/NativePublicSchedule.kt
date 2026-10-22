@@ -152,8 +152,9 @@ fun NativePublicSchedule(
         )
     }) { insets ->
         Column(Modifier.fillMaxSize().padding(insets)) {
-            // Small period selector like the official app; no oversized hero block.
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+            // Week navigation applies to the weekly grid. Dated sections span
+            // the published calendar and already show each event's actual date.
+            if (selectedTab == 0) Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { weekShift = (weekShift - 1).coerceAtLeast(-80) },
                     enabled = weekShift > -80) { Text("‹", style = MaterialTheme.typography.headlineMedium) }

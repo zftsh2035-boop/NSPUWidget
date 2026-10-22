@@ -94,6 +94,7 @@ def main():
         text('Экономика образования')
         text('Время не указано')
         assert not any(n.get('text', '').startswith('На сайте пока нет записей') for n in dump().iter('node'))
+        assert not any('неделя · ' in n.get('text', '') for n in dump().iter('node')), 'Weekly range mislabels dated entries'
         save_ui(args.output, 'room-218-published-classes')
         tap(text('Очные'))
         text('Нет занятий')
@@ -107,6 +108,7 @@ def main():
         morning = text('8:30-10:00')
         later = text('10:10-11:40')
         assert bounds(morning)[1] < bounds(later)[1], '08:30 must precede 10:10 on screen'
+        assert not any('неделя · ' in n.get('text', '') for n in dump().iter('node'))
         text('Экономика образования')
         save_ui(args.output, 'teacher-morning-first')
         result = 'PASS: group 4.021.1.26 -> room 218; dated section auto-selection; missing-time cards; manual tab choice; teacher 8:30 before 10:10 in actual optimized APK'
