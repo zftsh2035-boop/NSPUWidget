@@ -32,9 +32,27 @@ data class PublicTimetable(
     val hasPastButton: Boolean = false
 ) {
     fun byDay(day: Int) = sessions.filter { it.section == PublicSection.WEEKLY && it.day == day }
+        .sortedBy { it.startMinute ?: Int.MAX_VALUE }
     fun dated(section: PublicSection) = sessions.filter { it.section == section }
-        .sortedWith(compareBy<PublicClass> { it.date }.thenBy { it.time })
+        .sortedWith(compareBy<PublicClass> { it.date ?: LocalDate.MAX }
+            .thenBy { it.startMinute ?: Int.MAX_VALUE })
+
+    /** Open actual published entries when the preferred section is empty. */
+    fun openingSection(preferred: PublicSection): PublicSection =
+        if (sessions.any { it.section == preferred }) preferred
+        else PublicSection.entries.firstOrNull { section -> sessions.any { it.section == section } }
+            ?: preferred
 }
+
+/** Clock order must not depend on whether the site writes 8:30 or 08:30. */
+internal val PublicClass.startMinute: Int?
+    get() {
+        val clock = time.substringBefore('-').trim().replace('.', ':').split(':')
+        if (clock.size != 2) return null
+        val hour = clock[0].toIntOrNull()?.takeIf { it in 0..23 } ?: return null
+        val minute = clock[1].toIntOrNull()?.takeIf { it in 0..59 } ?: return null
+        return hour * 60 + minute
+    }
 
 /**
  * Pure Jsoup parser for the PUBLIC teacher/room timetable pages. No WebView, JS, or
@@ -96,8 +114,13 @@ object PublicTimetableParser {
                     if (examSection) PublicSection.EXAMS else PublicSection.DATED)
             }
         }
+        val seen = mutableSetOf<String>()
         return PublicTimetable(title, number, monday,
-            sessions.distinctBy { listOf(it.section, it.date, it.day, it.time, it.description).joinToString("|") },
+            sessions.filter {
+                // Repeated rows with no clock may be separate consecutive classes.
+                // No evidence permits merging them into one occurrence.
+                it.time.isBlank() || seen.add(listOf(it.section, it.date, it.day, it.time, it.description).joinToString("|"))
+            },
             roomInfo, doc.select("a[href*=old=1]").isNotEmpty())
     }
 
@@ -186,10 +209,12 @@ object PublicTimetableParser {
             // Jsoup then repairs several time/description pairs into one row.
             // Each clock starts its own slot; a later clock is never a subject.
             while (start < cells.size) {
-                val slot = time(cells[start].text())
-                if (slot == null) { start++; continue }
+                val slot = time(cells[start].text()) ?: if (cells[start].text().isBlank()) "" else {
+                    start++; continue
+                }
                 start++
-                while (start < cells.size && time(cells[start].text()) == null) {
+                while (start < cells.size && cells[start].text().isNotBlank() &&
+                    time(cells[start].text()) == null) {
                     for (fragment in splitCell(cells[start])) {
                         result += lesson(fragment, slot, dayIndex, currentDate, section)
                     }

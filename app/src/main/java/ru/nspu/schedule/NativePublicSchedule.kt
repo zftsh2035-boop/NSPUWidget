@@ -44,6 +44,7 @@ fun NativePublicSchedule(
     var selectedTab by rememberSaveable(page.url) {
         mutableIntStateOf(if (page.kind == OfficialSchedulePage.Kind.EXTRAMURAL_GROUP) 1 else 0)
     }
+    var sectionChosen by rememberSaveable(page.url) { mutableStateOf(false) }
     var showPast by rememberSaveable(page.url) { mutableStateOf(false) }
     var refreshCounter by remember(page.url) { mutableIntStateOf(0) }
     var forceRefresh by remember(page.url) { mutableStateOf(false) }
@@ -113,6 +114,13 @@ fun NativePublicSchedule(
         listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
     }
     val timetable = if (displayedRequest == requestKey) data else cachedInMemory
+    LaunchedEffect(timetable, page.url) {
+        val loaded = timetable ?: return@LaunchedEffect
+        if (!sectionChosen) {
+            selectedTab = loaded.openingSection(PublicSection.entries[selectedTab]).ordinal
+            sectionChosen = true
+        }
+    }
     val daysData = remember(timetable) {
         (0..6).map { day -> timetable?.byDay(day).orEmpty().map { it.present() } }
     }
@@ -168,7 +176,7 @@ fun NativePublicSchedule(
             }
             SecondaryTabRow(selectedTabIndex = selectedTab) {
                 listOf("Очные", "Заочные", "Сессия").forEachIndexed { i, name ->
-                    Tab(selected = selectedTab == i, onClick = { selectedTab = i },
+                    Tab(selected = selectedTab == i, onClick = { selectedTab = i; sectionChosen = true },
                         text = { Text(name, maxLines = 1) })
                 }
             }
@@ -302,7 +310,7 @@ internal fun PublicClass.present(): PublicLessonPresentation {
     val actualKind = SiteParser.specialKind(description) ?: kind
     val sourceDetails = description.removePrefix(subject).trimStart(',', ' ')
         .replace(weekNotePattern, "").trim(' ', ',', ';')
-    return PublicLessonPresentation(subject, time, sourceDetails.ifBlank { details.ifBlank { fallback } },
+    return PublicLessonPresentation(subject, time.ifBlank { "Время не указано" }, sourceDetails.ifBlank { details.ifBlank { fallback } },
         weeks, actualKind, date, SiteParser.displayKind(actualKind))
 }
 

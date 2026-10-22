@@ -6,6 +6,11 @@ import org.junit.Test
 import java.time.LocalDate
 
 class PublicTimetableParserTest {
+    @Test fun aMissingSourceClockIsVisibleWithoutInventingAnInterval() {
+        val lesson = PublicClass("", "Экономика образования", "Экономика образования, (л.)",
+            "ЛЕКЦИЯ", emptyList())
+        assertEquals("Время не указано", lesson.present().time)
+    }
     private val room = OfficialSchedulePage(OfficialSchedulePage.Kind.ROOM,159,"Ауд. 206")
     private fun document(week: Int = 8) = Jsoup.parse("""
       <html><body><table class="main_table"><tr><td id="center">

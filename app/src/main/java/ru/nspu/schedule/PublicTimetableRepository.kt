@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Call disk and HTTP functions from Dispatchers.IO only.
  */
 object PublicTimetableRepository {
+    const val PARSER_VERSION = 4
     const val FRESH_MS = 20L * 60_000L
     private const val MAX_AGE_MS = 24L * 60 * 60_000L
     private const val MAX_DISK_BYTES = 1_200_000
@@ -56,7 +57,7 @@ object PublicTimetableRepository {
             System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS) return null
         return runCatching {
             val json = JSONObject(file.readText(Charsets.UTF_8))
-            if (json.optInt("parserVersion") != 3) {
+            if (json.optInt("parserVersion") != PARSER_VERSION) {
                 file.delete()
                 return null
             }
@@ -119,7 +120,7 @@ object PublicTimetableRepository {
     }
 
     private fun encode(v: PublicTimetable): JSONObject = JSONObject()
-        .put("parserVersion", 3)
+        .put("parserVersion", PARSER_VERSION)
         .put("title", v.title).put("week", v.week)
         .put("weekStart", v.weekStart.toString())
         .put("roomInfo", v.roomInfo).put("hasPast", v.hasPastButton)

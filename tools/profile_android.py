@@ -120,7 +120,7 @@ def fixture_files(directory):
                          links=[dict(label='3.008.2.26', url=SOURCE + 'group_shedule.php?id=3328', type='group'),
                                 dict(label='411', url=SOURCE + 'room_shedule.php?id=31', type='room')])
                     for day in range(6) for slot, clock in enumerate(TIMES)]
-        data = dict(parserVersion=3, title=TEACHER, week=7, weekStart=str(monday), roomInfo='Тестовая аудитория',
+        data = dict(parserVersion=4, title=TEACHER, week=7, weekStart=str(monday), roomInfo='Тестовая аудитория',
                     hasPast=True, sessions=sessions)
         digest = hashlib.sha256((SOURCE + page + '&nextweek=0').encode()).hexdigest()[:24]
         path = directory / f'nspu-public-{digest}.json'
