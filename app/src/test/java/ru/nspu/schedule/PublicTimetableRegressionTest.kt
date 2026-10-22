@@ -33,6 +33,16 @@ class PublicTimetableRegressionTest {
         assertEquals("Экономика образования", monday.first().subject)
     }
 
+    @Test fun multipleGroupCodesInsideOneHyperlinkCannotBecomeExtraLessonsOrLoseTheirTime() {
+        val teacher = captured("teacher-289", OfficialSchedulePage.Kind.TEACHER, 289)
+        val monday = teacher.dated(PublicSection.DATED).filter { it.date == LocalDate.of(2026, 11, 30) }
+        assertEquals(2, monday.size)
+        assertTrue(monday[0].subject.startsWith("Педагогическая практика"))
+        assertTrue(monday[1].subject.endsWith("сопровождение обучающихся с ОВЗ)"))
+        assertEquals("13:00", monday[1].time)
+        for (event in monday) assertTrue(event.links.any { it.label.contains("3.029.1.24; 3.029.3.24") })
+    }
+
     @Test fun clockOrderHandlesPaddedUnpaddedSingleTimesAndUnknownTimes() {
         val date = LocalDate.of(2026, 10, 26)
         val events = listOf("17:30-19:00", "8:30-10:00", "10:10", "08:00-09:00", "", "8.15")

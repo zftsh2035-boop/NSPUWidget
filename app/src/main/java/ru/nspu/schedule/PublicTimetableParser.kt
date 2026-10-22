@@ -227,7 +227,13 @@ object PublicTimetableParser {
 
     private fun splitCell(cell: Element): List<Fragment> {
         // A <br> often separates subject and teacher, not two different lessons.
-        val text = cellText(cell)
+        // A single group hyperlink may contain several codes separated by ';'.
+        // Those separators are part of the label, not a new subject/clock slot.
+        val protected = cell.clone()
+        for (link in protected.select("a[href]")) {
+            if (';' in link.text()) link.text(link.text().replace(';', '\uE000'))
+        }
+        val text = cellText(protected)
         val refs = cell.select("a[href]").mapNotNull { a ->
             val path = a.attr("href").substringBefore('?')
             val type = when (path) {
@@ -244,7 +250,7 @@ object PublicTimetableParser {
         }
         val result = mutableListOf<Fragment>()
         for (raw in text.split(';')) {
-            val part = raw.trim().trim(',', ' ', '\u00a0')
+            val part = raw.replace('\uE000', ';').trim().trim(',', ' ', '\u00a0')
             if (part.length < 4 || part == "—") continue
             val links = refs.filter { it.label.length > 2 && part.contains(it.label, ignoreCase = true) }
                 .distinctBy { it.url }
