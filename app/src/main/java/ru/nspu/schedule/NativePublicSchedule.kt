@@ -306,13 +306,13 @@ internal fun PublicClass.present(): PublicLessonPresentation {
     val teachers = links.asSequence().filter { it.type == "teacher" }
         .map { it.label }.distinct().take(3).joinToString(", ")
     val details = listOf(groups, rooms, teachers).filter { it.isNotBlank() }.joinToString(" · ")
-    val weeks = weekNotePattern.findAll(description).map { it.value }.distinct().joinToString(" · ")
+    val weeks = LessonWeeks.label(Lesson(day, time, description, date = date))
     val fallback = description.substringAfter(",", "").trim().substringBefore("(").trim()
     val actualKind = SiteParser.specialKind(description) ?: kind
     val sourceDetails = description.removePrefix(subject).trimStart(',', ' ')
         .replace(weekNotePattern, "").trim(' ', ',', ';')
     return PublicLessonPresentation(subject, time.ifBlank { "Время не указано" }, sourceDetails.ifBlank { details.ifBlank { fallback } },
-        weeks, actualKind, date, SiteParser.displayKind(actualKind))
+        weeks, actualKind, date, SiteParser.eventLabel(actualKind, description))
 }
 
 /** Compact, non-clickable card with all week ranges immediately visible. */

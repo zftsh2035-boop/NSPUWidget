@@ -100,6 +100,9 @@ internal fun LessonCard(card: LessonPresentation, highlighted: Boolean, ongoing:
                     modifier = if (card.teacherPage != null) Modifier.clickable(
                         role = Role.Button, onClickLabel = "Расписание преподавателя"
                     ) { onOpenSchedule(card.teacherPage) } else Modifier)
+                Spacer(Modifier.height(5.dp))
+                Text(card.weekLabel, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 card.note?.takeIf { it.options.visibleOn(card.date) }?.let { note ->
                     Spacer(Modifier.height(6.dp))
                     Text("Заметка: " + note.preview,

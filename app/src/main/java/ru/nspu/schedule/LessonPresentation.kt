@@ -18,7 +18,8 @@ internal data class LessonPresentation(
     val teacherPage: OfficialSchedulePage?,
     val roomPage: OfficialSchedulePage?,
     val noteTarget: NoteTarget? = null,
-    val note: PersonalNote? = null
+    val note: PersonalNote? = null,
+    val weekLabel: String = ""
 )
 
 internal fun Lesson.present(date: LocalDate, termStart: LocalDate,
@@ -26,8 +27,9 @@ internal fun Lesson.present(date: LocalDate, termStart: LocalDate,
     val info = SiteParser.details(this, date, termStart)
     val teacher = links.teacher(raw)
     return LessonPresentation(this, date, info.subject, teacher?.label ?: info.teacher,
-        info.room, info.kind, SiteParser.displayKind(info.kind),
+        info.room, info.kind, SiteParser.eventLabel(info.kind, raw),
         time.substringBefore('-'), time.substringAfter('-', ""),
         teacher?.let { OfficialSchedulePage.fromUrl(it.url, it.label) },
-        links.room(info.room)?.let { OfficialSchedulePage.fromUrl(it.url, "Ауд. " + info.room) })
+        links.room(info.room)?.let { OfficialSchedulePage.fromUrl(it.url, "Ауд. " + info.room) },
+        weekLabel = LessonWeeks.label(this, termStart))
 }

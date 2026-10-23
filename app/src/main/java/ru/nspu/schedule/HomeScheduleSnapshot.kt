@@ -13,7 +13,7 @@ internal data class HomeScheduleSnapshot(
     val group: String,
     val subgroup: String,
     val availableSubgroups: List<String>,
-    val changes: List<String>,
+    val changes: List<ChangeRecord>,
     val updated: String,
     val error: String,
     val groupId: Int,
@@ -24,5 +24,6 @@ internal data class HomeScheduleSnapshot(
     val nextNoteBoundary: Long? = null,
     val assessments: List<AssessmentEntry> = emptyList(),
     val automaticUpcomingDay: Boolean = false,
-    val cachedLessonCount: Int = 0
+    val cachedLessonCount: Int = 0,
+    val subjects: List<SubjectScheduleEntry> = emptyList()
 )

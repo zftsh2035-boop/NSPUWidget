@@ -6,7 +6,7 @@ import java.time.format.DateTimeFormatter
 
 /** Pure parsing code: independently testable without Android or network access. */
 data class Lesson(val day: Int, val time: String, val raw: String, val changed: Boolean = false,
-    val parity: Int = 0, val date: LocalDate? = null)
+    val parity: Int = 0, val date: LocalDate? = null, val sourceNoticeId: String? = null)
 data class Notice(val id: String, val text: String, val published: String? = null, val isNew: Boolean = false)
 data class PageSnapshot(val lessons: List<Lesson>, val notices: List<Notice>, val termStart: LocalDate? = null,
     val teachingStart: LocalDate? = null)
@@ -25,8 +25,9 @@ object SiteParser {
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
     private val weekNumbers = Regex("(\\d+)(?:\\s*[-–—]\\s*(\\d+))?")
     private val languagePattern = Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
-    private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен|экз\.?)\b""")
-    private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т|зач\.?)\b""")
+    private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен(?:а|у|ом|е|ы|ов|ам|ами|ах)?|экз\.)(?![а-яё])|(?<![а-яё])экз(?![а-яё])|\(\s*э\.?\s*\)""")
+    private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т(?:а|у|ом|е|ы|ов|ам|ами|ах)?|зач\.?)(?![а-яё])|\(\s*з\.?\s*\)""")
+    private val retakePattern = Regex("""(?iu)(?<![а-яё])(?:пересдач[а-яё]*|пересд\.?|повторная\s+сдача)(?![а-яё])""")
     private val gradedCreditPattern = Regex("""(?iu)(?:\(\s*з\s*\.\s*о\s*\.\s*\)|зач[её]т\s+с\s+оценкой|дифференцированный\s+зач[её]т)""")
     private val consultationPattern = Regex("""(?iu)(?:\(\s*конс\.\s*\)|(?<![а-яё])консультация(?![а-яё]))""")
     private val courseworkPattern = Regex("""(?iu)(?:\(\s*(?:курс|к)\.?\s*р\.?\s*\)|защита\s+(?:курсовой|диплома|проекта))""")
@@ -34,7 +35,7 @@ object SiteParser {
     private val plainTypePattern = Regex("""(?iu)\(\s*(л\s*\.\s*з\s*\.|п\s*\.\s*з\s*\.|л\s*\.)\s*\)""")
     private val rangePart = Regex("""\d+\s*[-–—]\s*\d+|\d+""")
     private val numberPattern = Regex("""\d+""")
-    private val roomPattern = Regex("""(?i)(?:^|[\s,(;])(?:аудитория|ауд\.?|а\.|кабинет|каб\.?)\s*([^,;()]+)""")
+    private val roomPattern = Regex("""(?iu)(?:^|[\s,(;])(?:аудитория|ауд\.?|а\.|кабинет|каб\.?)(?![а-яё])\s*([^,;()]+)""")
     private val statedStart = Regex("""(?iu)\bначало\s*[-–—:]?\s*(\d{1,2}[:.]\d{2})""")
 
     fun parse(text: String, selectedGroup: String = "3.008.2.26"): PageSnapshot {
@@ -85,7 +86,7 @@ object SiteParser {
         val headings = noticeHeading.findAll(banner).toList()
         // The university sometimes publishes a banner without the usual salutation.
         val pieces = if (headings.isEmpty()) {
-            if (banner.length > 22) listOf(banner) else emptyList()
+            if (banner.length > 22 || specialKind(banner) != null) listOf(banner) else emptyList()
         } else headings.mapIndexed { index, match ->
             val start = match.range.first
             val end = headings.getOrNull(index + 1)?.range?.first ?: banner.length
@@ -93,7 +94,7 @@ object SiteParser {
         }
         return pieces.mapNotNull { piece ->
             val message = piece.trim().replace(Regex("\\s+"), " ")
-            if (message.length < 22) null else {
+            if (message.length < 22 && specialKind(message) == null) null else {
                 // Dates in the text are NOT necessarily publication dates.
                 Notice(hash(message), message)
             }
@@ -152,20 +153,10 @@ object SiteParser {
     }
 
     internal fun weekMatches(raw: String, week: Int): Boolean {
-        val parts = typePartsPattern.findAll(raw).toList()
-        // A practice block in the annotation excludes ordinary lectures/practicals.
-        if (parts.isNotEmpty()) return parts.any { part ->
-            weekNumbers.findAll(part.groupValues[2]).any { m ->
-                val first = m.groupValues[1].toInt()
-                week in first..(m.groupValues[2].toIntOrNull() ?: first)
-            }
-        }
-        val weeks = weeksPattern.find(raw)?.groupValues?.get(1) ?: return true
-        return weekNumbers.findAll(weeks).any { m ->
-            val first = m.groupValues[1].toInt()
-            val last = m.groupValues[2].toIntOrNull() ?: first
-            week in first..last
-        }
+        val all = LessonWeeks.parts(raw)
+        // A practice annotation alongside a lecture is a separate block, not extra lecture weeks.
+        val parts = all.filter { it.kind in setOf("л.", "л.з.", "п.з.") }.ifEmpty { all }
+        return parts.isEmpty() || parts.any { week in it.weeks }
     }
 
     /** Only codes actually mentioned next to a language lesson are selectable. */
@@ -215,17 +206,12 @@ object SiteParser {
         val raw = lesson.raw
         specialKind(raw)?.let { return it }
         val week = academicWeek(date, termStart)
-        val typeParts = typePartsPattern.findAll(raw).toList()
-        val matched = typeParts.firstOrNull { match ->
-            rangePart.findAll(match.groupValues[2]).any { part ->
-                val ends = numberPattern.findAll(part.value).map { it.value.toInt() }.toList()
-                week in ends.first()..ends.last()
-            }
-        }?.groupValues?.get(1) ?: typeParts.firstOrNull()?.groupValues?.get(1)
+        val typeParts = LessonWeeks.parts(raw).filter { it.kind != null }
+        val matched = typeParts.firstOrNull { week in it.weeks }?.kind ?: typeParts.firstOrNull()?.kind
             ?: plainTypePattern.find(raw)?.groupValues?.get(1)
         return when (matched?.lowercase()?.replace(Regex("\\s+"), "")) {
             "л." -> "ЛЕКЦИЯ"
-            "п.з." -> "ПРАКТИКА"
+            "п.з.", "практика" -> "ПРАКТИКА"
             "л.з." -> "ЛАБОРАТОРНАЯ"
             else -> "ЗАНЯТИЕ"
         }
@@ -240,7 +226,9 @@ object SiteParser {
         val subject = l.raw.substringBefore(',').trim()
         val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore("(").trim()
         val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
-        val room = roomPattern.find(l.raw)?.groupValues?.get(1)?.trim()
+        val room = (Regex("""(?iu),\s*([^,()]+)\s*\(\s*Учебная аудитория\s*\)""")
+                .find(l.raw)?.groupValues?.get(1)?.trim()
+            ?: roomPattern.find(l.raw)?.groupValues?.get(1)?.trim())
             ?.replace(Regex("""(?iu)\s+(?:начало\b|\d{1,2}[:.]\d{2}).*$"""), "")?.take(30) ?: "—"
         return LessonInfo(subject, teacher, room, lessonKind(l, date, termStart))
     }
@@ -251,7 +239,7 @@ object SiteParser {
         "ЛАБОРАТОРНАЯ" -> 0xFFC3A9FF.toInt()
         "ЗАЧЁТ", "ЗАЧЁТ С ОЦЕНКОЙ" -> 0xFFFFCD80.toInt()
         "ЭКЗАМЕН" -> 0xFFFF92A6.toInt()
-        "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ" -> 0xFFD4A6FF.toInt()
+        "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ", "ПЕРЕСДАЧА" -> 0xFFD4A6FF.toInt()
         else -> 0xFFA9BEDB.toInt()
     }
 
@@ -264,6 +252,7 @@ object SiteParser {
         "ЭКЗАМЕН" -> "экз."
         "КОНСУЛЬТАЦИЯ" -> "конс."
         "КУРСОВАЯ" -> "курс.р."
+        "ПЕРЕСДАЧА" -> "пересдача"
         else -> "—"
     }
 
@@ -273,9 +262,13 @@ object SiteParser {
         creditPattern.containsMatchIn(raw) -> "ЗАЧЁТ"
         consultationPattern.containsMatchIn(raw) -> "КОНСУЛЬТАЦИЯ"
         courseworkPattern.containsMatchIn(raw) -> "КУРСОВАЯ"
+        isRetake(raw) -> "ПЕРЕСДАЧА"
         else -> null
     }
-    fun importantKind(kind: String) = kind in setOf("ЭКЗАМЕН", "ЗАЧЁТ", "ЗАЧЁТ С ОЦЕНКОЙ", "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ")
+    fun isRetake(raw: String) = retakePattern.containsMatchIn(raw)
+    fun eventLabel(kind: String, raw: String): String = if (isRetake(raw) && kind != "ПЕРЕСДАЧА")
+        "ПЕРЕСДАЧА · " + displayKind(kind) else displayKind(kind)
+    fun importantKind(kind: String) = kind in setOf("ЭКЗАМЕН", "ЗАЧЁТ", "ЗАЧЁТ С ОЦЕНКОЙ", "КОНСУЛЬТАЦИЯ", "КУРСОВАЯ", "ПЕРЕСДАЧА")
     fun displayKind(kind: String) = if (importantKind(kind)) kind else shortKind(kind)
 
     private fun hash(value: String): String {

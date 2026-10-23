@@ -124,6 +124,7 @@ internal class ScheduleView(val data: GroupSchedule, private val settings: Share
             dayNotes = notes.getOrDefault(emptyList()).filter { it.target.isDay },
             assessments = data.assessments(now),
             automaticUpcomingDay = chosenDate(now.toLocalDate()) == null && date > now.toLocalDate(),
-            cachedLessonCount = data.cached().size)
+            cachedLessonCount = data.cached().size,
+            subjects = data.subjects(date))
     }
 }

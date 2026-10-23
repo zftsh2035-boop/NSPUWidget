@@ -38,6 +38,10 @@
         android:layout_height="wrap_content" android:layout_marginTop="3dp"
         android:textColor="#9DD9FF" android:textSize="11sp"
         android:singleLine="true" android:ellipsize="end"/>
+    <TextView android:id="@+id/compactWeeks" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:layout_marginTop="1dp"
+        android:textSize="9sp" android:textColor="#B7CDE3"
+        android:singleLine="true" android:ellipsize="end"/>
     </LinearLayout>
     <TextView android:id="@+id/groups" android:layout_width="36dp" android:layout_height="40dp"
         android:layout_gravity="top|end" android:gravity="center" android:text="☆" android:textSize="23sp"

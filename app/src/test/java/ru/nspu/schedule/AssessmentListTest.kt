@@ -46,7 +46,7 @@ class AssessmentListTest {
             assertNull(entry.date)
             assertTrue(ImportantInfo.isAssessment(entry.notice))
         }
-        assertFalse(ImportantInfo.isAssessment(Notice("banner","Уважаемые студенты! Зачёт 26.10.2026")))
+        assertTrue(ImportantInfo.isAssessment(Notice("banner","Уважаемые студенты! Зачёт 26.10.2026")))
     }
     @Test fun sameDayEntriesSortByClockRatherThanLexicographicTime() {
         val entries = AssessmentList.entries(listOf(credit,credit.copy(time="8:30-10:00")),

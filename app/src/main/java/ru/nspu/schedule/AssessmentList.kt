@@ -10,12 +10,27 @@ internal enum class AssessmentState(val label: String) {
 }
 
 internal data class AssessmentEntry(val notice: Notice, val lesson: Lesson, val kind: String,
-    val date: LocalDate?, val state: AssessmentState, val info: SiteParser.LessonInfo)
+    val date: LocalDate?, val state: AssessmentState, val info: SiteParser.LessonInfo,
+    val weekLabel: String = "") {
+    val isRetake get() = SiteParser.isRetake(lesson.raw)
+    val kindLabel get() = SiteParser.eventLabel(kind, lesson.raw)
+}
 
 /** An assessment is not a result: elapsed time never means the student passed it. */
 internal object AssessmentList {
     private val clock = DateTimeFormatter.ofPattern("H:mm")
     private fun time(value: String) = runCatching { LocalTime.parse(value.trim(), clock) }.getOrNull()
+
+    /** Announcements with assessment signals join the same list and semester archive. */
+    fun fromNotices(notices: List<Notice>): List<Lesson> = notices.filter {
+        !ImportantInfo.isEvent(it) && ImportantInfo.isAssessment(it)
+    }.map { notice ->
+        val date = ImportantInfo.dates(notice.text).singleOrNull()
+        val stated = SiteParser.statedTime(notice.text)
+            ?: Regex("""(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–—]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?""")
+                .find(notice.text)?.value?.replace(Regex("\\s*[-–—]\\s*"), "-").orEmpty()
+        Lesson(date?.dayOfWeek?.value?.minus(1) ?: -1, stated, notice.text, date = date, sourceNoticeId = notice.id)
+    }
 
     fun state(lesson: Lesson, now: LocalDateTime): AssessmentState {
         val date = SiteParser.fixedDate(lesson) ?: return AssessmentState.UNDATED
@@ -40,7 +55,7 @@ internal object AssessmentList {
     private fun occurrence(lesson: Lesson): String = listOf(
         SiteParser.fixedDate(lesson), lesson.day, lesson.time,
         lesson.raw.substringBefore(',').trim().lowercase().replace(Regex("\\s+"), " "),
-        SiteParser.specialKind(lesson.raw), SiteParser.subgroupKey(lesson)
+        SiteParser.specialKind(lesson.raw), SiteParser.subgroupKey(lesson), SiteParser.isRetake(lesson.raw), lesson.sourceNoticeId
     ).joinToString("|")
 
     /** Retain elapsed occurrences even after the site removes its old calendar rows.
@@ -62,10 +77,12 @@ internal object AssessmentList {
         .filter { SiteParser.subgroupFits(it.raw, subgroup) && SiteParser.fixedDate(it)?.isBefore(termStart) != true }
         .mapNotNull { lesson ->
             val kind = SiteParser.specialKind(lesson.raw) ?: return@mapNotNull null
-            val source = ImportantInfo.notices(listOf(lesson), now.toLocalDate(), termStart, includePast = true)
-                .singleOrNull() ?: return@mapNotNull null
+            val source = lesson.sourceNoticeId?.let { known[it] ?: Notice(it, lesson.raw) }
+                ?: ImportantInfo.notices(listOf(lesson), now.toLocalDate(), termStart, includePast = true)
+                    .singleOrNull() ?: return@mapNotNull null
             AssessmentEntry(known[source.id] ?: source, lesson, kind, SiteParser.fixedDate(lesson),
-                state(lesson, now), SiteParser.details(lesson, SiteParser.fixedDate(lesson) ?: now.toLocalDate(), termStart))
+                state(lesson, now), SiteParser.details(lesson, SiteParser.fixedDate(lesson) ?: now.toLocalDate(), termStart),
+                LessonWeeks.label(lesson, termStart))
         }.distinctBy { it.notice.id }.sortedWith(compareBy<AssessmentEntry> { it.date ?: LocalDate.MAX }
             .thenBy { time(it.lesson.time.substringBefore('-')) ?: LocalTime.MAX })
 }

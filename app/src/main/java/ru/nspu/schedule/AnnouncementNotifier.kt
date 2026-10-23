@@ -49,7 +49,7 @@ object AnnouncementNotifier {
         val manager = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(channel,
-                if (assessments) "Зачёты и экзамены" else "Объявления НГПУ", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                if (assessments) "Важное из расписания" else "Объявления НГПУ", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = if (assessments) "Одно сводное уведомление об обновлении списка" else "Новые сообщения над расписанием группы"
             })
         }
@@ -57,7 +57,7 @@ object AnnouncementNotifier {
             Intent(c, MainActivity::class.java).putExtra(if (assessments) "show_assessments" else "show_notices", true)
                 .putExtra("open_group_id", Favorites.primaryId(c)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val heading = if (assessments) "Зачёты и экзамены · обновлений: ${fresh.size}"
+        val heading = if (assessments) "Важное из расписания · обновлений: ${fresh.size}"
             else if (fresh.size == 1) "Новое объявление НГПУ" else "Новых объявлений: ${fresh.size}"
         val body = fresh.take(3).joinToString("\n\n") { it.text.take(250) }
         val notification = NotificationCompat.Builder(c, channel)

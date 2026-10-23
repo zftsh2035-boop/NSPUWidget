@@ -232,6 +232,8 @@ class ScheduleWidget : AppWidgetProvider() {
                     val d = SiteParser.details(focus.lesson, focus.date, data.termStart())
                     v.setTextViewText(R.id.compactSubject, d.subject)
                     v.setTextViewText(R.id.compactTeacher, d.teacher)
+                    v.setTextViewText(R.id.compactWeeks, LessonWeeks.label(focus.lesson, data.termStart()))
+                    v.setTextColor(R.id.compactWeeks, widgetPalette.muted)
                     val time = if (focus.ongoing) "До " + focus.lesson.time.substringAfter('-')
                         else if (tiny && focus.date == java.time.LocalDate.now(ZONE))
                             "В " + focus.lesson.time.substringBefore('-')
@@ -240,7 +242,7 @@ class ScheduleWidget : AppWidgetProvider() {
                             " · " + focus.lesson.time.substringBefore('-')
                     v.setTextViewText(R.id.compactTime,
                         time + if (tiny && d.room != "—") " · ауд. " + d.room else "")
-                    v.setTextViewText(R.id.compactKind, SiteParser.displayKind(d.kind))
+                    v.setTextViewText(R.id.compactKind, SiteParser.eventLabel(d.kind, focus.lesson.raw))
                     v.setTextViewText(R.id.compactRoom,
                         if (d.room == "—") "Аудитория не указана" else "ауд. " + d.room)
                     v.setTextColor(R.id.compactKind, WidgetTheme.lessonAccent(d.kind, widgetMode))

@@ -330,6 +330,8 @@ class MainActivity : ComponentActivity() {
             })
         }
         var announcementFilter by rememberSaveable { mutableIntStateOf(if (intent.getBooleanExtra("show_changes", false)) 2 else 0) }
+        var assessmentFilter by rememberSaveable { mutableIntStateOf(0) }
+        var subjectsVisible by rememberSaveable { mutableStateOf(false) }
         var viewingAssessment by remember { mutableStateOf<AssessmentEntry?>(null) }
         LaunchedEffect(navigationRequest) {
             if (navigationRequest > 0 && handledNavigation != navigationRequest) {
@@ -444,10 +446,11 @@ class MainActivity : ComponentActivity() {
         val focusIndex = timeline.indexOfFirst { row ->
             row is DayRow.LessonRow && LessonFocus.matches(focusedLesson, date, row.lesson)
         }
-        LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup) {
+        LaunchedEffect(selectedTab, date, focusIndex, home.groupId, pendingFocusGroup, announcementFilter, assessmentFilter) {
             if (selectedTab == 0 && (autoScroll || pendingFocusGroup == home.groupId) && focusIndex >= 0) {
-                val prefix = 4 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
+                val prefix = 5 + (if (availableSubgroups.isNotEmpty()) 1 else 0) +
                     (if (notices.isNotEmpty()) 1 else 0) + (if (home.automaticUpcomingDay) 1 else 0) +
+                    (if (changes.isNotEmpty()) 1 else 0) +
                     (if (error.isNotBlank()) 1 else 0)
                 listState.scrollToItem(prefix + focusIndex)
                 pendingFocusGroup = null
@@ -491,7 +494,7 @@ class MainActivity : ComponentActivity() {
                         label = { Text("Объявления" + if (notices.any { it.isNew }) " ●" else "") })
                     NavigationBarItem(selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        icon = { Text("▤", fontSize = 22.sp) }, label = { Text("Зачёты") })
+                        icon = { Text("▤", fontSize = 22.sp) }, label = { Text("Важное") })
                     NavigationBarItem(selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
                         icon = { Text("⚙", fontSize = 22.sp) }, label = { Text("Настройки") })
@@ -539,7 +542,12 @@ class MainActivity : ComponentActivity() {
                             rerender++
                         }
                     }
-                    item { AssessmentOverviewButton(home.assessments) { selectedTab = 2 } }
+                    item { AssessmentOverviewButton(home.assessments) { assessmentFilter = 0; selectedTab = 2 } }
+                    item {
+                        OutlinedButton(onClick = { subjectsVisible = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Предметы и недели")
+                        }
+                    }
                     if (error.isNotBlank()) item {
                         Text((if (home.cachedLessonCount > 0) "Показана сохранённая копия. " else "") + error,
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -581,7 +589,7 @@ class MainActivity : ComponentActivity() {
                         item {
                             val top = notices.firstOrNull { it.isNew } ?: notices.first()
                             Surface(shape = RoundedCornerShape(20.dp),
-                                onClick = { selectedTab = 1 },
+                                onClick = { announcementFilter = 0; selectedTab = 1 },
                                 color = MaterialTheme.colorScheme.tertiaryContainer,
                                 modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(14.dp)) {
@@ -596,12 +604,23 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    if (changes.isNotEmpty()) item {
+                        Surface(onClick = { announcementFilter = 2; selectedTab = 1 },
+                            shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Изменения расписания · ${changes.size}  ›", fontWeight = FontWeight.Bold)
+                                Text(changes.first().annotated(), maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                     if (lessons.isEmpty()) item {
                         Surface(shape = RoundedCornerShape(20.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow) {
                             Text(if (home.cachedLessonCount == 0 && error.isBlank() && lastUpdate != "Ещё не загружено")
                                 "На сайте пока нет опубликованных занятий для этой группы."
-                                else "Занятий на выбранный день нет. Чтобы проверить расписание, нажми ⟳.",
+                                else "Занятий на выбранный день нет. Сроки предметов и ближайшие пары — в разделе «Предметы и недели».",
                                 modifier = Modifier.padding(20.dp))
                         }
                     }
@@ -634,7 +653,7 @@ class MainActivity : ComponentActivity() {
                 } else if (selectedTab == 1) {
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Объявления · " + notices.size,
+                            Text(if (announcementFilter == 2) "Изменения расписания" else "Объявления · " + notices.size,
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
                             TextButton(onClick = {
@@ -646,7 +665,7 @@ class MainActivity : ComponentActivity() {
                     }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("Все", "Сообщения", "Изменения").forEachIndexed { index, label ->
+                            listOf(0 to "Объявления", 2 to "Изменения").forEach { (index, label) ->
                                 FilterChip(selected = announcementFilter == index,
                                     onClick = { announcementFilter = index }, label = { Text(label) })
                             }
@@ -673,40 +692,46 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Store.source(this@MainActivity))))
                         }) { Text("Открыть оригинал на сайте НГПУ ↗") }
                     }
-                    if (announcementFilter != 1) item {
-                        Text("История изменений", style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold)
-                    }
-                    if (announcementFilter != 1 && changes.isEmpty()) item {
+                    if (announcementFilter == 2 && changes.isEmpty()) item {
                         Text("Подтверждённых изменений пока нет. После первой синхронизации приложение будет сохранять замену аудитории, преподавателя, времени и типа пары.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (announcementFilter != 1) items(changes, key = { "change:$it" }) { entry ->
+                    if (announcementFilter == 2) items(changes, key = { "change:" + it.message }) { entry ->
                         Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp,
                             modifier = Modifier.fillMaxWidth()) {
-                            Text(entry, modifier = Modifier.padding(14.dp),
+                            Text(entry.annotated(), modifier = Modifier.padding(14.dp),
                                 style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 } else if (selectedTab == 2) {
                     item {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Зачёты и экзамены", style = MaterialTheme.typography.titleLarge,
+                            Text("Важное из расписания", style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
                             TextButton(onClick = {
                                 Store.data(this@MainActivity).markCategoryRead(assessments = true); refreshWidgets(); rerender++
                             }) { Text("Прочитано") }
                         }
                     }
-                    if (home.assessments.isEmpty()) item {
-                        Text("Зачёты, экзамены и консультации появятся здесь, когда их опубликуют в расписании.",
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Все события", "Пересдачи").forEachIndexed { index, label ->
+                                FilterChip(selected = assessmentFilter == index, onClick = { assessmentFilter = index },
+                                    label = { Text(if (index == 1) "$label · ${home.assessments.count { it.isRetake }}" else label) })
+                            }
+                        }
+                    }
+                    val visibleAssessments = home.assessments.filter { assessmentFilter == 0 || it.isRetake }
+                    if (visibleAssessments.isEmpty()) item {
+                        Text(if (assessmentFilter == 1) "Пересдач на сайте пока нет." else
+                            "Зачёты, экзамены, курсовые и консультации появятся здесь из всех частей страницы группы.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     val sections = listOf(
-                        "Предстоящие" to home.assessments.filter { it.state !in setOf(AssessmentState.PAST, AssessmentState.UNDATED) },
-                        "Без точной даты" to home.assessments.filter { it.state == AssessmentState.UNDATED },
-                        "Прошедшие" to home.assessments.filter { it.state == AssessmentState.PAST }.asReversed())
+                        "Предстоящие" to visibleAssessments.filter { it.state !in setOf(AssessmentState.PAST, AssessmentState.UNDATED) },
+                        "Без точной даты" to visibleAssessments.filter { it.state == AssessmentState.UNDATED },
+                        "Прошедшие" to visibleAssessments.filter { it.state == AssessmentState.PAST }.asReversed())
                     for ((label, entries) in sections) {
                         if (entries.isNotEmpty()) item(key = "assessment-section:$label") {
                             Text("$label · ${entries.size}", style = MaterialTheme.typography.titleSmall,
@@ -716,7 +741,7 @@ class MainActivity : ComponentActivity() {
                             AssessmentCard(entry) { viewingAssessment = entry }
                         }
                     }
-                    if (home.assessments.any { it.state == AssessmentState.PAST }) item {
+                    if (visibleAssessments.any { it.state == AssessmentState.PAST }) item {
                         Text("«Прошёл» означает, что время события прошло. Результат сдачи здесь не отмечается. Записи сохраняются до смены семестра.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -923,7 +948,11 @@ class MainActivity : ComponentActivity() {
         viewingAssessment?.let { entry ->
             AlertDialog(onDismissRequest = { viewingAssessment = null },
                 title = { Text(entry.info.subject) },
-                text = { Text(entry.notice.text) },
+                text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(entry.kindLabel, fontWeight = FontWeight.Bold)
+                    Text(entry.weekLabel, style = MaterialTheme.typography.bodySmall)
+                    Text(entry.notice.text)
+                } },
                 confirmButton = { TextButton(onClick = { viewingAssessment = null }) { Text("Закрыть") } },
                 dismissButton = {
                     entry.date?.let { eventDate ->
@@ -934,6 +963,13 @@ class MainActivity : ComponentActivity() {
                         }) { Text("Открыть этот день") }
                     }
                 })
+        }
+        if (subjectsVisible) {
+            SubjectScheduleSheet(home.subjects, onDismiss = { subjectsVisible = false }, onOpenDate = { chosen ->
+                subjectsVisible = false
+                Store.appView(this@MainActivity).selectDate(chosen)
+                selectedTab = 0; rerender++
+            })
         }
         if (favoritePicker) {
             FavoritesDialog(home.favorites, home.groupId, home.primaryGroupId,

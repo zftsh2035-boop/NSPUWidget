@@ -30,7 +30,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     private var linksRaw: String? = null
     private var linksSnapshot: List<ScheduleLink> = emptyList()
     private var historyRaw: String? = null
-    private var historySnapshot: List<String> = emptyList()
+    private var historySnapshot: List<ChangeRecord> = emptyList()
     fun availableSubgroups(): List<String> {
         cached() // Populates both the parsed lessons and derived subgroup list.
         return synchronized(cacheLock) { languageSnapshot }
@@ -58,12 +58,23 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     }.getOrDefault(LocalDate.of(2026, 9, 1))
     fun week(date: LocalDate): Int = SiteParser.academicWeek(date, termStart())
 
-    fun changeHistory(): List<String> {
+    fun changeHistory(): List<ChangeRecord> {
         val raw = prefs().getString("change_history", "[]") ?: "[]"
         return synchronized(cacheLock) {
             if (raw != historyRaw) {
                 val array = JSONArray(raw)
-                historySnapshot = (0 until array.length()).map { array.getString(it) }
+                historySnapshot = (0 until array.length()).map { index ->
+                    val entry = array.optJSONObject(index)
+                    if (entry == null) ChangeRecord(array.getString(index)) else {
+                        val text = entry.getString("message")
+                        val ranges = entry.optJSONArray("highlights") ?: JSONArray()
+                        ChangeRecord(text, (0 until ranges.length()).mapNotNull { n ->
+                            val range = ranges.optJSONObject(n) ?: return@mapNotNull null
+                            val from = range.optInt("start", -1); val to = range.optInt("end", -1)
+                            if (from >= 0 && to > from && to <= text.length) ChangedRange(from, to) else null
+                        })
+                    }
+                }
                 historyRaw = raw
             }
             historySnapshot
@@ -77,7 +88,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
                 val parsed = (0 until a.length()).map { i ->
                     val o = a.getJSONObject(i)
                     Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"), o.optBoolean("changed"),
-                        o.optInt("parity"), runCatching { LocalDate.parse(o.optString("date")) }.getOrNull())
+                        o.optInt("parity"), runCatching { LocalDate.parse(o.optString("date")) }.getOrNull(),
+                        o.optString("sourceNoticeId").ifBlank { null })
                 }
                 lessonSnapshot = parsed
                 languageSnapshot = SiteParser.languageOptions(parsed)
@@ -107,15 +119,20 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
             Lesson(o.getInt("day"), o.getString("time"), o.getString("raw"),
-                parity = o.optInt("parity"), date = runCatching { LocalDate.parse(o.optString("date")) }.getOrNull())
+                parity = o.optInt("parity"), date = runCatching { LocalDate.parse(o.optString("date")) }.getOrNull(),
+                sourceNoticeId = o.optString("sourceNoticeId").ifBlank { null })
         }
     }.getOrDefault(emptyList())
     fun assessments(now: java.time.LocalDateTime = java.time.LocalDateTime.now(ZONE)): List<AssessmentEntry> {
-        val lessons = AssessmentList.merge(archivedAssessments(), cached(), now)
-        return AssessmentList.entries(lessons, now, termStart(), group(), notices().associateBy { it.id })
+        val current = notices()
+        val lessons = AssessmentList.merge(archivedAssessments(), cached() + AssessmentList.fromNotices(current), now)
+        return AssessmentList.entries(lessons, now, termStart(), group(), current.associateBy { it.id })
     }
     fun nextAssessmentBoundary(now: java.time.LocalDateTime) =
-        AssessmentList.nextBoundary(AssessmentList.merge(archivedAssessments(), cached(), now), now)
+        AssessmentList.nextBoundary(AssessmentList.merge(archivedAssessments(), cached() + AssessmentList.fromNotices(notices()), now), now)
+
+    fun subjects(date: LocalDate) = SubjectSchedule.entries(cached(), date, termStart(), group(),
+        runCatching { LocalDate.parse(prefs().getString("teaching_start", "")) }.getOrNull())
     /** Hiding affects only this phone's home-screen widget, never the official site or app. */
     fun widgetNotices(): List<Notice> {
         val hidden = prefs().getStringSet("dismissed_notices", emptySet()) ?: emptySet()
@@ -142,7 +159,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         }
     }
 
-    fun needsRefresh() = prefs().getInt("parser_version", 0) != 3 || missingScheduleLinks() ||
+    fun needsRefresh() = prefs().getInt("parser_version", 0) != 4 || missingScheduleLinks() ||
         System.currentTimeMillis() - prefs().getLong("fetched_at", 0) >= 3L * 60 * 60 * 1000
 
     fun missingScheduleLinks() = !prefs().contains("schedule_links")
@@ -194,7 +211,8 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
     }
     private fun lessonsJson(items: List<Lesson>): JSONArray = JSONArray().also { a ->
         items.forEach { a.put(JSONObject().put("day", it.day).put("time", it.time).put("raw", it.raw)
-            .put("changed", it.changed).put("parity", it.parity).put("date", it.date?.toString() ?: "")) }
+            .put("changed", it.changed).put("parity", it.parity).put("date", it.date?.toString() ?: "")
+            .put("sourceNoticeId", it.sourceNoticeId ?: "")) }
     }
     private fun noticesJson(items: List<Notice>): JSONArray = JSONArray().also { a ->
         items.forEach { a.put(JSONObject().put("id", it.id).put("text", it.text).put("published", it.published ?: "").put("isNew", it.isNew)) }
@@ -237,10 +255,10 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
 
         val start = snapshot.termStart ?: termStart()
         val changedTerm = snapshot.termStart != null && snapshot.termStart != termStart()
-        val assessmentArchive = AssessmentList.merge(archivedAssessments() + cached(), snapshot.lessons,
+        val assessmentArchive = AssessmentList.merge(archivedAssessments() + cached(), snapshot.lessons + AssessmentList.fromNotices(snapshot.notices),
             java.time.LocalDateTime.now(ZONE), changedTerm)
         // Rebuild an older parser's baseline without reporting format repairs as university edits.
-        val parserChanged = prefs().getInt("parser_version", 0) != 3
+        val parserChanged = prefs().getInt("parser_version", 0) != 4
         val oldLessons = if (changedTerm || parserChanged) emptyList() else cached()
         val semanticChanges = ChangeLog.diff(oldLessons, snapshot.lessons, LocalDate.now(ZONE), start)
         val previous = oldLessons.associateBy { SiteParser.key(it) }
@@ -268,9 +286,13 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
         val hiddenNow = (prefs().getStringSet("dismissed_notices", emptySet()) ?: emptySet())
             .filterTo(mutableSetOf()) { it in activeIds }
         val timestamp = java.time.LocalDateTime.now(ZONE).toString().replace('T', ' ').take(16)
-        val log = (semanticChanges.map { "$timestamp · " + it.message } + changeHistory())
-            .distinct().take(100)
-        val logJson = JSONArray().also { a -> log.forEach { a.put(it) } }
+        val log = (semanticChanges.map { it.record().prefixed("$timestamp · ") } + changeHistory())
+            .distinctBy { it.message }.take(100)
+        val logJson = JSONArray().also { a -> log.forEach { entry ->
+            a.put(JSONObject().put("message", entry.message).put("highlights", JSONArray().also { spans ->
+                entry.highlights.forEach { spans.put(JSONObject().put("start", it.start).put("end", it.end)) }
+            }))
+        } }
 
         // One atomic SharedPreferences update: lessons and announcements always match one successful fetch.
         val ok = prefs().edit()
@@ -284,7 +306,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
             .putString("teaching_start", snapshot.teachingStart?.toString() ?: "")
             .putString("change_history", logJson.toString())
             .putString("schedule_links", ScheduleLinks.encode(pageLinks))
-            .putInt("parser_version", 3)
+            .putInt("parser_version", 4)
             .putLong("fetched_at", System.currentTimeMillis())
             .putString("updated", timestamp)
             .putString("error", "")

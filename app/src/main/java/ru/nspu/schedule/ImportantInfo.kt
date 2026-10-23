@@ -21,8 +21,8 @@ internal object ImportantInfo {
         }.distinct().toList()
     }
     fun isEvent(notice: Notice) = notice.id.startsWith(PREFIX)
-    fun isAssessment(notice: Notice) = isEvent(notice) &&
-        SiteParser.specialKind(notice.text.substringAfter('\n', notice.text)) != null
+    // Classification depends on the content, not on which part of the page supplied it.
+    fun isAssessment(notice: Notice) = SiteParser.specialKind(notice.text) != null
     fun date(notice: Notice): LocalDate? = if (isEvent(notice))
         dates(notice.text.substringBefore('\n')).singleOrNull() else null
     fun expired(notice: Notice, today: LocalDate) = date(notice)?.isBefore(today) == true
@@ -42,8 +42,8 @@ internal object ImportantInfo {
             day.dayOfWeek.value - 1 == lesson.day && SiteParser.applicable(lesson, day, termStart)
         }) return@mapNotNull null
         val label = when {
+            special != null -> SiteParser.eventLabel(special, lesson.raw)
             keyword != null || annotation -> "ВАЖНОЕ УТОЧНЕНИЕ"
-            special != null -> SiteParser.displayKind(special)
             event -> "СОБЫТИЕ"
             else -> "ЗАНЯТИЕ ПО ДАТЕ"
         }

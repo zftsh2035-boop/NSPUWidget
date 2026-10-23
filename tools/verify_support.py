@@ -76,8 +76,8 @@ def main():
         tap(text('Объявления'))
         text('Объявлений на сайте сейчас нет.')
         assert not any(n.get('text') == 'ЗАЧЁТ' for n in dump().iter('node')), 'Assessment leaked into announcements'
-        tap(text('Зачёты'))
-        text('Зачёты и экзамены')
+        tap(text('Важное'))
+        text('Важное из расписания')
         event = text('ЗАЧЁТ')
         save_ui(args.output, 'future-credit-list')
         tap(event)
@@ -98,7 +98,7 @@ def main():
         # semester archive. A cold start must still show it as elapsed.
         adb('shell', 'am', 'force-stop', PKG)
         adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity', '--ez', 'show_assessments', 'true')
-        text('Зачёты и экзамены')
+        text('Важное из расписания')
         for _ in range(6):
             if any(n.get('text') == 'Прошёл' for n in dump().iter('node')):
                 break
