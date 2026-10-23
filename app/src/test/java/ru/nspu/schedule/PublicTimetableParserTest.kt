@@ -6,6 +6,14 @@ import org.junit.Test
 import java.time.LocalDate
 
 class PublicTimetableParserTest {
+    @Test fun aDatedRetakeKeepsBothItsTypeAndRetakeLabelInPublicScreens() {
+        val raw="Психология, проф.Андриенко Елена Васильевна (экз.), 406 (Учебная аудитория), Комиссия - пересдача"
+        val date=LocalDate.of(2026,9,17)
+        val card=PublicClass("11:40","Психология",raw,"ЭКЗАМЕН",emptyList(),date=date,section=PublicSection.EXAMS).present()
+        assertEquals("ПЕРЕСДАЧА · ЭКЗАМЕН",card.kindLabel)
+        assertEquals("17.09.2026",card.weekNotes)
+        assertTrue(card.metadata.contains("Комиссия - пересдача"))
+    }
     @Test fun aMissingSourceClockIsVisibleWithoutInventingAnInterval() {
         val lesson = PublicClass("", "Экономика образования", "Экономика образования, (л.)",
             "ЛЕКЦИЯ", emptyList())

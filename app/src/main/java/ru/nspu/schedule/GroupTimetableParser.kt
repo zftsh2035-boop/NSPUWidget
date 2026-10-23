@@ -28,6 +28,17 @@ internal object GroupTimetableParser {
             val end = academicHeading.find(banner)?.range?.first ?: banner.length
             notices += SiteParser.parseBanner(banner.take(end))
         }
+        // Some departments put a separate paragraph outside every timetable table.
+        val outside = (doc.selectFirst("td#center") ?: doc.body()).clone()
+        outside.select("table.rasp_table, script, style, nav, footer, form").remove()
+        outside.select("h1,h2,h3").filter {
+            it.text().startsWith("Расписание",true) || it.text().startsWith("Группа",true)
+        }.forEach { it.remove() }
+        val extra = outside.select("p, .notice, .alert").map { it.text() }
+            .filter { SiteParser.specialKind(it) != null }
+        val fragments = (extra + outside.ownText()).filter { SiteParser.specialKind(it) != null }
+            .ifEmpty { listOf(outside.text()).filter { SiteParser.specialKind(it) != null } }
+        fragments.forEach { notices += SiteParser.parseBanner(it) }
         for (table in tables.filter { it.text().contains("Числитель") && !PublicTimetableParser.hasCalendarRows(it) }) {
             var day = -1
             for (row in PublicTimetableParser.directRows(table)) {

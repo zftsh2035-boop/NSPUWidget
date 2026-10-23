@@ -306,7 +306,9 @@ internal fun PublicClass.present(): PublicLessonPresentation {
     val teachers = links.asSequence().filter { it.type == "teacher" }
         .map { it.label }.distinct().take(3).joinToString(", ")
     val details = listOf(groups, rooms, teachers).filter { it.isNotBlank() }.joinToString(" · ")
-    val weeks = LessonWeeks.label(Lesson(day, time, description, date = date))
+    val sourceWeeks = weekNotePattern.findAll(description).map { it.value }.distinct().joinToString(" · ")
+    val weeks = sourceWeeks.takeIf { it.isNotBlank() && date == null }
+        ?: LessonWeeks.label(Lesson(day, time, description, date = date))
     val fallback = description.substringAfter(",", "").trim().substringBefore("(").trim()
     val actualKind = SiteParser.specialKind(description) ?: kind
     val sourceDetails = description.removePrefix(subject).trimStart(',', ' ')

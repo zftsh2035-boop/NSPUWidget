@@ -15,7 +15,7 @@ data class ScheduleChange(val message: String, val lessonKey: String, val lesson
 /** The history stores offsets, never markup mixed into the university's wording. */
 object ChangeLog {
     private fun normalized(value: String) = value.trim().replace(Regex("""\s+"""), " ").lowercase()
-    private fun base(l: Lesson) = l.day.toString() + "|" + normalized(l.raw.substringBefore(',')) + "|" + SiteParser.subgroupKey(l)
+    private fun base(l: Lesson) = normalized(l.raw.substringBefore(',')) + "|" + SiteParser.subgroupKey(l)
 
     /** Word-level LCS keeps every unchanged fragment in ordinary type on BOTH sides. */
     private fun edits(before: String, after: String): Pair<List<ChangedRange>, List<ChangedRange>> {
@@ -72,11 +72,14 @@ object ChangeLog {
             val incoming = freshGroups[key].orEmpty().toMutableList()
             // Unchanged occurrences must not be paired with an added or removed row.
             previous.toList().forEach { a ->
-                val match = incoming.firstOrNull { b -> a.time == b.time && a.date == b.date &&
+                val match = incoming.firstOrNull { b -> a.day == b.day && a.time == b.time && a.date == b.date &&
                     a.parity == b.parity && normalized(a.raw) == normalized(b.raw) }
                 if (match != null) { previous.remove(a); incoming.remove(match) }
             }
-            val order = compareBy<Lesson> { it.date ?: LocalDate.MAX }.thenBy { it.time.padStart(11, '0') }.thenBy { it.parity }
+            val order = compareBy<Lesson> { it.date ?: LocalDate.MAX }.thenBy { it.day }.thenBy {
+                val clock = it.time.substringBefore('-').split(':')
+                (clock.firstOrNull()?.toIntOrNull() ?: 99) * 60 + (clock.getOrNull(1)?.toIntOrNull() ?: 0)
+            }.thenBy { it.parity }
             val a = previous.sortedWith(order)
             val b = incoming.sortedWith(order)
             for (i in 0 until maxOf(a.size,b.size)) {
@@ -103,6 +106,10 @@ object ChangeLog {
                         }
                         add("Время", before.time, after.time)
                         add("Дата", before.date?.toString() ?: "не указана", after.date?.toString() ?: "не указана")
+                        if (before.day != after.day && before.date == null && after.date == null) {
+                            val days = listOf("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
+                            add("День", days.getOrNull(before.day) ?: "не указан", days.getOrNull(after.day) ?: "не указан")
+                        }
                         fun column(value: Int) = when (value) { 1 -> "числитель"; 2 -> "знаменатель"; else -> "обе недели" }
                         add("Чередование", column(before.parity), column(after.parity))
                         add("Ауд.", o.room, n.room)

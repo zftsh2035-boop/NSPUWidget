@@ -102,4 +102,22 @@ class ImportantRevisionTest {
         assertEquals(1,changes.size)
         assertTrue(changes.single().message.startsWith("Добавлено:"))
     }
+
+    @Test fun aSeparateParagraphOutsideTheTablesAlsoReachesImportantEvents() {
+        val doc=Jsoup.parse("""<td id="center"><h2>Группа 3.008.2.26</h2>
+            <p>Зачёт по русскому языку 26.10.2026 в 10:10</p>
+            <table class="rasp_table"><tr><td>Числитель</td></tr></table></td>""")
+        val page=GroupTimetableParser.parse(doc,"3.008.2.26",today=now.toLocalDate())
+        assertEquals(1,page.notices.count { ImportantInfo.isAssessment(it) })
+        assertTrue(page.notices.single().text.startsWith("Зачёт по русскому"))
+    }
+
+    @Test fun aMovedClassShowsItsOldAndNewDayOrDateInsteadOfTwoUnrelatedMessages() {
+        val before=Lesson(0,"8:30-10:00","Алгебра, И.И.Петров, а. 411")
+        val move=ChangeLog.diff(listOf(before),listOf(before.copy(day=1)),now.toLocalDate(),start).single()
+        assertTrue(move.message.contains("День понедельник → вторник"))
+        val dated=before.copy(date=LocalDate.of(2026,10,26))
+        val change=ChangeLog.diff(listOf(dated),listOf(dated.copy(day=1,date=LocalDate.of(2026,10,27))),now.toLocalDate(),start).single()
+        assertTrue(change.message.contains("Дата 2026-10-26 → 2026-10-27"))
+    }
 }
