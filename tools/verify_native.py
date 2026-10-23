@@ -101,10 +101,13 @@ def main():
         assert not any(n.get('text') == 'Заочные занятия по датам' for n in dump().iter('node'))
         save_ui(args.output, 'room-manual-tab-preserved')
         adb('shell', 'input', 'keyevent', '4')
-        teacher = text('Е.В.Ельцова')
-        if bounds(teacher)[3] > 520 or bounds(teacher)[3] - bounds(teacher)[1] < 16:
+        for _ in range(4):
+            teacher = next((n for n in dump().iter('node') if n.get('text') == 'Е.В.Ельцова'), None)
+            if teacher is not None and bounds(teacher)[3] <= 520 and bounds(teacher)[3] - bounds(teacher)[1] >= 16:
+                break
             adb('shell', 'input', 'swipe', 160, 500, 160, 280, 350)
-            teacher = text('Е.В.Ельцова')
+        else:
+            raise AssertionError('Teacher link was not reachable by scrolling')
         tap(teacher)
         text('Расписание преподавателя')
         text('Региональные рынки')

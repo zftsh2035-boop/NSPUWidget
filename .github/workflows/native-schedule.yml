@@ -2,7 +2,7 @@ name: Native room and teacher regression checks
 on:
   workflow_dispatch:
   push:
-    branches: [main, dev]
+    branches: [main, dev, validation/v2.15]
     paths:
       - app/**
       - tools/verify_native.py
