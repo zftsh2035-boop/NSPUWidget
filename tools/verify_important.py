@@ -66,6 +66,9 @@ def main():
     try:
         psych, course, banner, ordinary, message = seed_cases()
         adb('install', '-r', args.current_apk)
+        # PACKAGE_REMOVED/REPLACED can force-stop the new process after adb
+        # install reports success, especially while a fresh API 29 image boots.
+        time.sleep(6)
         adb('logcat', '-c')
         adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity')
         text('Открыть все события · 11')
