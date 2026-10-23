@@ -7,6 +7,7 @@ on:
       - app/**
       - tools/verify_native.py
       - tools/verify_important.py
+      - tools/profile_android.py
       - .github/workflows/native-schedule.yml
 permissions:
   contents: read

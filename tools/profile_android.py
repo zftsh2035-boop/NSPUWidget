@@ -24,6 +24,17 @@ def adb(*args, binary=False, check=True, payload=None):
     return result.stdout if binary else result.stdout.decode('utf-8', errors='replace')
 
 
+def fixture_network(enabled):
+    """Keep disposable fixtures isolated from SIM provisioning on fresh emulators."""
+    assert adb('shell', 'getprop', 'ro.kernel.qemu').strip() == '1', 'Disposable emulator only'
+    # A fresh API 35 image can re-enable cellular data after svc data disable.
+    # Unregister the emulated modem as well, then restore it during teardown.
+    adb('emu', 'gsm', 'data', 'home' if enabled else 'unregistered')
+    state = 'enable' if enabled else 'disable'
+    adb('shell', 'svc', 'wifi', state)
+    adb('shell', 'svc', 'data', state)
+
+
 def dump():
     # API 29's accessibility dumper can race a window transition and crash in
     # childNafCheck. Retry the observation, never the user action being tested.
@@ -91,7 +102,7 @@ def fixture_files(directory):
     links = [dict(kind='TEACHER', label=TEACHER, url=SOURCE + 'teacher_shedule.php?id=452'),
              dict(kind='ROOM', label='411', url=SOURCE + 'room_shedule.php?id=31')]
     prefs = {
-        'schedule': {'group_id': 3328, 'group_name': '3.008.2.26 ИСиТвО', 'subgroup': 'Все', 'parser_version': 3,
+        'schedule': {'group_id': 3328, 'group_name': '3.008.2.26 ИСиТвО', 'subgroup': 'Все', 'parser_version': 4,
                      'fetched_at': int(time.time() * 1000),
                      'selected_date': str(selected), 'term_start': str(monday - timedelta(weeks=6)),
                      'lessons': json.dumps(lessons, ensure_ascii=False), 'notices': '[]',
@@ -130,6 +141,7 @@ def fixture_files(directory):
 
 def seed():
     adb('shell', 'am', 'force-stop', PKG)
+    fixture_network(False)
     # The functional scenarios start with notifications enabled. Android 13+
     # otherwise places its first-run permission dialog above the tested UI.
     # Grant while the disposable fixture is installed; replacement retains it.
@@ -245,8 +257,7 @@ def main():
     # Each trial below uninstalls the app before installing the version-1
     # seeder. Replacing the optimized APK here would be a forbidden downgrade.
     # Park network-constrained WorkManager sync; all public pages are seeded in the cache.
-    adb('shell', 'svc', 'wifi', 'disable')
-    adb('shell', 'svc', 'data', 'disable')
+    fixture_network(False)
     try:
         # ABBA order exposes host/emulator drift instead of attributing one noisy
         # pair of measurements to an app change. Each trial starts from identical data.
@@ -259,8 +270,7 @@ def main():
             print('Measuring ' + label, flush=True)
             run(apk, args.output / label, verify)
     finally:
-        adb('shell', 'svc', 'wifi', 'enable', check=False)
-        adb('shell', 'svc', 'data', 'enable', check=False)
+        fixture_network(True)
 
 
 if __name__ == '__main__':

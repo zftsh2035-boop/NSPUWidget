@@ -8,6 +8,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
+from profile_android import fixture_network
 from profile_android import PKG, adb, bounds, dump, screenshot, seed, tap, text, wait_node
 from verify_favorites import HOST, PRIMARY, compact_is, full_is, put_pref, set_value, start_host
 
@@ -29,8 +30,7 @@ def main():
     adb('uninstall', HOST, check=False)
     adb('uninstall', PKG, check=False)
     adb('install', '-r', args.fixture_apk)
-    adb('shell', 'svc', 'wifi', 'disable')
-    adb('shell', 'svc', 'data', 'disable')
+    fixture_network(False)
     try:
         seed()
         future = datetime.now(ZoneInfo('Asia/Novosibirsk')).date() + timedelta(days=28)
@@ -152,8 +152,7 @@ def main():
         raise
     finally:
         (args.output / 'logcat.txt').write_text(adb('logcat', '-d'))
-        adb('shell', 'svc', 'wifi', 'enable', check=False)
-        adb('shell', 'svc', 'data', 'enable', check=False)
+        fixture_network(True)
 
 
 if __name__ == '__main__':

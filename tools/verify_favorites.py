@@ -9,6 +9,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+from profile_android import fixture_network
 from profile_android import (PKG, adb, bounds, dump, fixture_files, measure,
                             screenshot, seed, tap, text, wait_node)
 
@@ -195,8 +196,7 @@ def main():
     adb('uninstall', HOST, check=False)
     adb('uninstall', PKG, check=False)
     adb('install', '-r', args.fixture_apk)
-    adb('shell', 'svc', 'wifi', 'disable')
-    adb('shell', 'svc', 'data', 'disable')
+    fixture_network(False)
     try:
         seed_favorites()
         adb('install', '-r', args.current_apk)
@@ -213,8 +213,7 @@ def main():
     finally:
         (args.output / 'logcat.txt').write_text(adb('logcat', '-d'))
         (args.output / 'appwidgets.txt').write_text(adb('shell', 'dumpsys', 'appwidget'))
-        adb('shell', 'svc', 'wifi', 'enable', check=False)
-        adb('shell', 'svc', 'data', 'enable', check=False)
+        fixture_network(True)
 
 
 if __name__ == '__main__':

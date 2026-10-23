@@ -9,6 +9,7 @@ import tempfile
 import time
 from zoneinfo import ZoneInfo
 
+from profile_android import fixture_network
 from profile_android import PKG, adb, bounds, dump, tap, text, wait_node
 from verify_favorites import HOST
 from verify_notes import named_field, seed_notes, save_ui, type_into_field
@@ -166,8 +167,7 @@ def main():
     adb('uninstall', HOST, check=False)
     adb('uninstall', PKG, check=False)
     adb('install', '-r', args.fixture_apk)
-    adb('shell', 'svc', 'wifi', 'disable')
-    adb('shell', 'svc', 'data', 'disable')
+    fixture_network(False)
     try:
         seed_notes()
         seed_old_database()
@@ -183,8 +183,7 @@ def main():
         raise
     finally:
         (args.output / 'logcat.txt').write_text(adb('logcat', '-d'))
-        adb('shell', 'svc', 'wifi', 'enable', check=False)
-        adb('shell', 'svc', 'data', 'enable', check=False)
+        fixture_network(True)
 
 
 if __name__ == '__main__':

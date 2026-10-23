@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from profile_android import fixture_network
 from profile_android import PKG, adb, bounds, dump, screenshot, tap, text, wait_node
 from verify_favorites import (HOST, PRIMARY, CODES, compact_is, favorites_button,
                               full_is, put_pref, seed_favorites, set_value, start_host)
@@ -152,7 +153,7 @@ def verify(out):
     full_is(PRIMARY)
     compact_is(PRIMARY)
     subject = wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactSubject')).get('text')
-    adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity', '--ei', 'open_group_id', 3328)
+    adb('shell', 'am', 'start', '-W', '-f', '0x24000000', '-n', PKG + '/.MainActivity', '--ei', 'open_group_id', 3328)
     add = wait_node(lambda n: n.get('content-desc', '').startswith('Добавить заметку: ' + subject + ', '))
     tap(add)
     text('Заметка к паре')
@@ -295,8 +296,7 @@ def main():
     adb('uninstall', HOST, check=False)
     adb('uninstall', PKG, check=False)
     adb('install', '-r', args.fixture_apk)
-    adb('shell', 'svc', 'wifi', 'disable')
-    adb('shell', 'svc', 'data', 'disable')
+    fixture_network(False)
     try:
         seed_notes()
         adb('install', '-r', args.current_apk)
@@ -315,8 +315,7 @@ def main():
     finally:
         (args.output / 'logcat.txt').write_text(adb('logcat', '-d'))
         adb('shell', 'settings', 'put', 'system', 'user_rotation', '0', check=False)
-        adb('shell', 'svc', 'wifi', 'enable', check=False)
-        adb('shell', 'svc', 'data', 'enable', check=False)
+        fixture_network(True)
 
 
 if __name__ == '__main__':
