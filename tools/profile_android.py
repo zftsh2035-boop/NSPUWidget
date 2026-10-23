@@ -27,6 +27,9 @@ def adb(*args, binary=False, check=True, payload=None):
 def fixture_network(enabled):
     """Keep disposable fixtures isolated from SIM provisioning on fresh emulators."""
     assert adb('shell', 'getprop', 'ro.kernel.qemu').strip() == '1', 'Disposable emulator only'
+    commands = adb('shell', 'cmd', 'connectivity', 'help', check=False)
+    if 'airplane-mode' in commands:
+        adb('shell', 'cmd', 'connectivity', 'airplane-mode', 'disable' if enabled else 'enable')
     # A fresh API 35 image can re-enable cellular data after svc data disable.
     # Unregister the emulated modem as well, then restore it during teardown.
     adb('emu', 'gsm', 'data', 'home' if enabled else 'unregistered')

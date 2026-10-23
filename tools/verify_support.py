@@ -100,11 +100,12 @@ def main():
         adb('shell', 'am', 'start', '-W', '-n', PKG + '/.MainActivity', '--ez', 'show_assessments', 'true')
         text('Важное из расписания')
         for _ in range(6):
-            if any(n.get('text') == 'Прошёл' for n in dump().iter('node')):
+            if any(n.get('text') == 'Прошедший зачёт' and bounds(n)[3] <= 520
+                   for n in dump().iter('node')):
                 break
             adb('shell', 'input', 'swipe', 160, 500, 160, 260, 350)
         else:
-            raise AssertionError('Archived elapsed credit disappeared after restart')
+            raise AssertionError('Archived elapsed credit was not reachable after restart')
         text('Прошедший зачёт')
         save_ui(args.output, 'past-credit-after-restart')
         start_host()
