@@ -956,11 +956,12 @@ class MainActivity : ComponentActivity() {
 
         viewingAssessment?.let { entry ->
             AlertDialog(onDismissRequest = { viewingAssessment = null },
-                title = { Text(entry.info.subject) },
+                title = { Text(entry.info.subject, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                 text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(entry.kindLabel, fontWeight = FontWeight.Bold)
-                    Text(entry.weekLabel, style = MaterialTheme.typography.bodySmall)
-                    Text(entry.notice.text)
+                    Text(entry.lesson.time.ifBlank { "Время не указано" } + " · " + entry.weekLabel,
+                        style = MaterialTheme.typography.bodySmall)
+                    Text(entry.lesson.raw)
                 } },
                 confirmButton = { TextButton(onClick = { viewingAssessment = null }) { Text("Закрыть") } },
                 dismissButton = {

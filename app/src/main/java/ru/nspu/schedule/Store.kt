@@ -65,7 +65,7 @@ internal class GroupSchedule(private val context: Context, val id: Int) {
                 val array = JSONArray(raw)
                 historySnapshot = (0 until array.length()).map { index ->
                     val entry = array.optJSONObject(index)
-                    if (entry == null) ChangeRecord(array.getString(index)) else {
+                    if (entry == null) ChangeLog.legacyRecord(array.getString(index)) else {
                         val text = entry.getString("message")
                         val ranges = entry.optJSONArray("highlights") ?: JSONArray()
                         ChangeRecord(text, (0 until ranges.length()).mapNotNull { n ->

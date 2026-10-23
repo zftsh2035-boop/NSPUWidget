@@ -121,4 +121,12 @@ class ImportantRevisionTest {
         val change=ChangeLog.diff(listOf(dated),listOf(dated.copy(day=1,date=LocalDate.of(2026,10,27))),now.toLocalDate(),start).single()
         assertTrue(change.message.contains("Дата 2026-10-26 → 2026-10-27"))
     }
+
+    @Test fun legacyFieldArrowsAlsoHighlightOnlyTheReplacedValuesWithoutRewritingHistory() {
+        val message="2026-10-22 12:00 · Алгебра: Ауд. 411 → 213; Преподаватель Иванов Иван Иванович → Иванов Пётр Иванович"
+        val record=ChangeLog.legacyRecord(message)
+        assertEquals(message,record.message)
+        assertEquals(listOf("411","213","Иван","Пётр"),record.highlights.map { message.substring(it.start,it.end) })
+        assertTrue(ChangeLog.legacyRecord("Сохранённое изменение прежней версии").highlights.isEmpty())
+    }
 }

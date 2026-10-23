@@ -50,6 +50,19 @@ object ChangeLog {
                 it.end + prefix.length + before.length + separator.length) })
     }
 
+    /** Older versions saved plain strings; recognise only their explicit field arrows. */
+    internal fun legacyRecord(message: String): ChangeRecord {
+        val field = Regex("""(Время|Дата|Недели|Ауд\.|Преподаватель|Тип)\s+([^;]+?)\s+→\s+([^;]+)(?=;|$)""")
+        val ranges = field.findAll(message).flatMap { match ->
+            val before = match.groups[2]!!
+            val after = match.groups[3]!!
+            val (a,b) = edits(before.value, after.value)
+            a.map { ChangedRange(it.start + before.range.first, it.end + before.range.first) } +
+                b.map { ChangedRange(it.start + after.range.first, it.end + after.range.first) }
+        }.toList()
+        return ChangeRecord(message, ranges)
+    }
+
     private fun joined(parts: List<ChangeRecord>, separator: String): ChangeRecord {
         val text = StringBuilder()
         val spans = mutableListOf<ChangedRange>()

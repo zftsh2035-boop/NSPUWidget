@@ -81,7 +81,7 @@ def main():
         event = text('ЗАЧЁТ')
         save_ui(args.output, 'future-credit-list')
         tap(event)
-        wait_node(lambda n: n.get('text', '').startswith('ЗАЧЁТ · ' + future.strftime('%d.%m.%Y')))
+        wait_node(lambda n: '10:10-11:40' in n.get('text', '') and future.strftime('%d.%m.%Y') in n.get('text', ''))
         tap(text('Открыть этот день'))
         month = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'][future.month - 1]
         wait_node(lambda n: n.get('content-desc') == 'Выбрать дату в календаре' and
