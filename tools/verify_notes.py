@@ -204,7 +204,10 @@ def verify(out):
     adb('shell', 'am', 'start', '-S', '-W', '-n', HOST + '/.WidgetHostActivity', '--ei', 'compact_height', 200)
     wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoot') and
               int(re.findall(r'\d+', n['bounds'])[3]) - int(re.findall(r'\d+', n['bounds'])[1]) > tiny_height * 1.3)
-    wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactRoom') and '411' in n.get('text', ''))
+    # Hosts may retain the safe tiny layout while resizing; both layouts must
+    # keep the room visible, either beside the clock or in its own line.
+    wait_node(lambda n: n.get('resource-id', '').endswith((':id/compactRoom', ':id/compactTime')) and '411' in n.get('text', ''))
+    wait_node(lambda n: n.get('resource-id', '').endswith(':id/compactWeeks') and re.search(r'1[-–—]24', n.get('text', '')))
     normal_note = note_text(long_note.rstrip(), compact=True)
     save_ui(out, 'normal-compact-long-note')
     tap(normal_note)
