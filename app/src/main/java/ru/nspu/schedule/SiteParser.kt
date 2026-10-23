@@ -25,7 +25,7 @@ object SiteParser {
     private val subgroupPattern = Regex("(?<![\\p{L}\\d])(?:А|A)\\s*(10|[1-9])(?!\\d)")
     private val weekNumbers = Regex("(\\d+)(?:\\s*[-–—]\\s*(\\d+))?")
     private val languagePattern = Regex("""(?iu)иностранный язык|английский язык|немецкий язык|французский язык|испанский язык""")
-    private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен(?:а|у|ом|е|ы|ов|ам|ами|ах)?|экз\.)(?![а-яё])|(?<![а-яё])экз(?![а-яё])|\(\s*э\.?\s*\)""")
+    private val examPattern = Regex("""(?iu)(?<![а-яё])(?:экзамен(?:а|у|ом|е|ы|ов|ам|ами|ах)?|экз(?:ам)?\.?)(?![а-яё])|\(\s*э\.?\s*\)""")
     private val creditPattern = Regex("""(?iu)(?<![а-яё])(?:зач[её]т(?:а|у|ом|е|ы|ов|ам|ами|ах)?|зач\.?)(?![а-яё])|\(\s*з\.?\s*\)""")
     private val retakePattern = Regex("""(?iu)(?<![а-яё])(?:пересдач[а-яё]*|пересд\.?|повторная\s+сдача)(?![а-яё])""")
     private val gradedCreditPattern = Regex("""(?iu)(?:\(\s*з\s*\.\s*о\s*\.\s*\)|зач[её]т\s+с\s+оценкой|дифференцированный\s+зач[её]т)""")
@@ -225,7 +225,7 @@ object SiteParser {
     fun details(l: Lesson, date: LocalDate = LocalDate.now(), termStart: LocalDate = LocalDate.of(2026, 9, 1)): LessonInfo {
         val subject = l.raw.substringBefore(',').trim()
         val teacherFragment = l.raw.substringAfter(',', "").substringBefore(",").substringBefore("(").trim()
-        val teacher = teacherFragment.take(60).ifBlank { "Не указан" }
+        val teacher = if (l.sourceNoticeId != null) "Сообщение НГПУ" else teacherFragment.take(60).ifBlank { "Не указан" }
         val room = (Regex("""(?iu),\s*([^,()]+)\s*\(\s*Учебная аудитория\s*\)""")
                 .find(l.raw)?.groupValues?.get(1)?.trim()
             ?: roomPattern.find(l.raw)?.groupValues?.get(1)?.trim())

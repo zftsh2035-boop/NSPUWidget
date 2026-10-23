@@ -357,9 +357,18 @@ class MainActivity : ComponentActivity() {
                     intent.getIntExtra("open_group_id", -1).takeIf { it > 0 } else null
             }
         }
-        val listState = rememberLazyListState()
+        val scheduleListState = rememberLazyListState()
+        val announcementsListState = rememberLazyListState()
+        val assessmentsListState = rememberLazyListState()
+        val settingsListState = rememberLazyListState()
+        val listState = when (selectedTab) {
+            1 -> announcementsListState
+            2 -> assessmentsListState
+            3 -> settingsListState
+            else -> scheduleListState
+        }
         // Pass State without reading it here: scrolling must not recompose AppScreen.
-        val listScrolling = remember { derivedStateOf { listState.isScrollInProgress } }
+        val listScrolling = remember(listState) { derivedStateOf { listState.isScrollInProgress } }
         val home = snapshot
         if (home == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

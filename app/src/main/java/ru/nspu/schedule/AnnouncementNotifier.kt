@@ -8,11 +8,22 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.StyleSpan
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 object AnnouncementNotifier {
     private const val CHANNEL_ID = "nspu-announcements"
+
+    private fun styled(change: ScheduleChange) = SpannableString(change.message).apply {
+        change.highlights.filter { it.start >= 0 && it.end > it.start && it.end <= length }.forEach {
+            setSpan(StyleSpan(Typeface.BOLD), it.start, it.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
 
     fun showChanges(c: Context, changes: List<ScheduleChange>) {
         if (changes.isEmpty()) return
@@ -25,12 +36,17 @@ object AnnouncementNotifier {
             Intent(c, MainActivity::class.java).putExtra("show_changes", true)
                 .putExtra("open_group_id", Favorites.primaryId(c)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val body = changes.take(3).joinToString("\n") { it.message }
+        val body = SpannableStringBuilder().apply {
+            changes.take(3).forEachIndexed { index, change ->
+                if (index > 0) append('\n')
+                append(styled(change))
+            }
+        }
         manager.notify(3329, NotificationCompat.Builder(c, "nspu-changes")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(if (changes.size == 1) "Изменение расписания НГПУ"
                 else "Изменений расписания: " + changes.size)
-            .setContentText(changes.first().message)
+            .setContentText(styled(changes.first()))
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending).setAutoCancel(true).build())
     }

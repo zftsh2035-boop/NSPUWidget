@@ -276,6 +276,7 @@ class ScheduleWidget : AppWidgetProvider() {
                     if (dayNote != null) v.setOnClickPendingIntent(R.id.compactTeacher,
                         open(context, widgetId, data.id, noteTarget = dayNote.target, note = dayNote))
                     v.setTextViewText(R.id.compactKind, "")
+                    v.setTextViewText(R.id.compactWeeks, "")
                     v.setTextViewText(R.id.compactRoom, "")
                 }
                 v.setOnClickPendingIntent(R.id.compactRoot, open(context, widgetId, data.id))

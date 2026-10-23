@@ -4,9 +4,7 @@ on:
   push:
     branches: [main, dev]
     paths:
-      - app/src/main/java/ru/nspu/schedule/*Public*.kt
-      - app/src/test/java/ru/nspu/schedule/PublicTimetable*.kt
-      - app/src/test/resources/public/**
+      - app/**
       - tools/verify_native.py
       - tools/verify_important.py
       - .github/workflows/native-schedule.yml
@@ -48,8 +46,8 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            python3 tools/verify_native.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk native-results
             python3 tools/verify_important.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk important-results
+            python3 tools/verify_native.py app/build/outputs/apk/fixture/app-fixture.apk app/build/outputs/apk/debug/app-debug.apk native-results
       - name: Publish source test results, screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4

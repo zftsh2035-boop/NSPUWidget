@@ -29,13 +29,14 @@ class ImportantRevisionTest {
     }
 
     @Test fun signalsAreRecognisedInAnySourceAndOrdinaryMessagesStayAnnouncements() {
-        for (signal in listOf("Зачёт","зачет","зач.","ЗАЧ","(з.)","Экзамен","экз.","ЭКЗ","(э.)","(к.р.)","(З. О.)","пересдача","пересд.")) {
+        for (signal in listOf("Зачёт","зачет","зач.","ЗАЧ","(з.)","Экзамен","экзам.","экз.","ЭКЗ","(э.)","(к.р.)","(З. О.)","пересдача","пересд.")) {
             val banner = Notice("official-$signal","Уважаемые студенты! $signal 26.10.2026 в 10:10")
             assertTrue(signal,ImportantInfo.isAssessment(banner))
             val lessons = AssessmentList.fromNotices(listOf(banner))
             val entry = AssessmentList.entries(lessons,now,start,known=mapOf(banner.id to banner)).single()
             assertEquals(banner.id,entry.notice.id)
             assertEquals(banner.text,entry.notice.text)
+            assertEquals("Сообщение НГПУ",entry.info.teacher)
             assertEquals(LocalDate.of(2026,10,26),entry.date)
             assertEquals("10:10",entry.lesson.time)
             assertEquals(AssessmentState.UPCOMING,entry.state)

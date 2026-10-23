@@ -45,7 +45,7 @@ def seed_cases():
 def find_scroll(value, tries=6):
     for _ in range(tries):
         found = next((n for n in dump().iter('node') if n.get('text') == value), None)
-        if found is not None:
+        if found is not None and bounds(found)[3] < 535 and bounds(found)[3] - bounds(found)[1] >= 16:
             return found
         adb('shell', 'input', 'swipe', 160, 500, 160, 240, 350)
     raise AssertionError('Not reachable: ' + value)
@@ -93,7 +93,7 @@ def main():
         text(psych)
         save_ui(args.output, 'psychology-retake-full-text')
         tap(text('Закрыть'))
-        tap(text('Спецкурс по курсовой работе (по математике)'))
+        tap(find_scroll('Спецкурс по курсовой работе (по математике)'))
         text(course)
         save_ui(args.output, 'coursework-retake-full-text')
         tap(text('Закрыть'))

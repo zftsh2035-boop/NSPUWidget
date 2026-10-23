@@ -101,7 +101,11 @@ def main():
         assert not any(n.get('text') == 'Заочные занятия по датам' for n in dump().iter('node'))
         save_ui(args.output, 'room-manual-tab-preserved')
         adb('shell', 'input', 'keyevent', '4')
-        tap(text('Е.В.Ельцова'))
+        teacher = text('Е.В.Ельцова')
+        if bounds(teacher)[3] > 520 or bounds(teacher)[3] - bounds(teacher)[1] < 16:
+            adb('shell', 'input', 'swipe', 160, 500, 160, 280, 350)
+            teacher = text('Е.В.Ельцова')
+        tap(teacher)
         text('Расписание преподавателя')
         text('Региональные рынки')
         tap(text('Заочные'))
